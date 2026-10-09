@@ -1,0 +1,2021 @@
+/* ---------- Kyungsung University brand colors ---------- */
+/* Pulled from the real portal's CSS variables. */
+:root {
+  --ksu-blue: #0060ac;
+  --ksu-blue-dark: #004a86;
+  --ksu-text: #111;
+  --ksu-sub: #333;
+  --ksu-input-border: #dedede;
+  --ksu-input-border-active: #858788;
+  --ksu-input-bg: #f9fbfd;
+  --ksu-placeholder: #afafaf;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+
+/* ---------- Basic page setup ---------- */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Lato', 'Noto Sans KR', -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f1efe8;
+  margin: 0;
+  padding: 40px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ---------- The white card ---------- */
+.card {
+  background: white;
+  border-radius: 6px;
+  padding: 28px 32px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+  margin: 0 0 4px 0;
+  font-size: 22px;
+}
+
+.subtitle {
+  margin: 0 0 16px 0;
+  color: #5f5e5a;
+  font-size: 14px;
+}
+
+#progress-text {
+  font-size: 13px;
+  color: #5f5e5a;
+  margin-bottom: 8px;
+}
+
+/* ---------- Checklist items ---------- */
+ul#checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#checklist li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-top: 1px solid #ededea;
+}
+
+#checklist li:first-child {
+  border-top: none;
+}
+
+label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--ksu-blue);
+}
+
+/* When a task is checked, style the text as done */
+li.done span {
+  text-decoration: line-through;
+  color: #9a988f;
+}
+
+/* Small colored tag, e.g. "Time-sensitive" */
+.tag {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+  margin-left: 8px;
+}
+
+.tag-urgent {
+  background: #faece7;
+  color: #993c1d;
+}
+
+/* ---------- Mentor contact box (student dashboard) ---------- */
+.mentor-contact {
+  background: #e8f1f9;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+
+.mentor-contact-label {
+  font-size: 11px;
+  color: var(--ksu-blue);
+  margin: 0 0 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.mentor-contact-name {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+  color: #04342c;
+}
+
+.mentor-contact-phone {
+  font-size: 13px;
+  margin: 2px 0 0;
+  color: var(--ksu-blue);
+}
+
+/* ---------- Login / signup form ---------- */
+/* Applies to every TEXT/EMAIL/PASSWORD input inside any .card.
+   :not([type="checkbox"]) is important — without it, this rule
+   would also hijack the checklist's checkboxes and break their
+   layout, since #checklist-card also has the .card class. */
+.card input:not([type="checkbox"]) {
+  width: 100%;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--ksu-input-border);
+  border-radius: 2px;
+  background: var(--ksu-input-bg);
+  font-size: 14px;
+  display: block;
+  transition: border-color 0.15s ease;
+}
+
+.card input:not([type="checkbox"]):focus {
+  outline: none;
+  border-color: var(--ksu-input-border-active);
+}
+
+.card input::placeholder {
+  color: var(--ksu-placeholder);
+}
+
+.card button,
+.secondary {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #d3d1c7;
+  background: white;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+/* Any login button (student-login-btn, mentor-login-btn, admin-login-btn) */
+button[id$="-login-btn"] {
+  background: var(--ksu-blue);
+  color: white;
+  border: none;
+  border-radius: 2px;
+}
+
+button[id$="-login-btn"]:hover {
+  background: var(--ksu-blue-dark);
+}
+
+.error-text {
+  color: #993c1d;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* ---------- Header row with logout button ---------- */
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.secondary.small {
+  width: auto;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+/* ---------- Footer link ---------- */
+.footer-link {
+  text-align: center;
+  margin-top: 16px;
+  font-size: 13px;
+}
+.footer-link a {
+  color: #5f5e5a;
+}
+
+/* ---------- Mentor dashboard ---------- */
+.card.wide {
+  max-width: 640px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 12px;
+  margin: 12px 0;
+  border: 1px solid #d3d1c7;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.mentee-row {
+  border: 1px solid #ededea;
+  border-left: 4px solid #d3d1c7;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.mentee-row summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+}
+.mentee-row summary::-webkit-details-marker { display: none; }
+
+.mentee-summary {
+  font-size: 12px;
+  color: #5f5e5a;
+}
+
+.status-red { border-left-color: #a32d2d; }
+.status-red .mentee-summary { color: #a32d2d; font-weight: 600; }
+
+.status-yellow { border-left-color: #b98a1e; }
+
+.status-green { border-left-color: #2e7d32; }
+
+.mentee-detail {
+  padding: 4px 14px 12px 14px;
+  border-top: 1px solid #ededea;
+}
+
+.task-row {
+  font-size: 13px;
+  padding: 4px 0;
+  color: #5f5e5a;
+}
+
+.task-row.task-done {
+  color: #9a988f;
+  text-decoration: line-through;
+}
+
+.task-row.task-overdue {
+  color: #a32d2d;
+  font-weight: 600;
+}
+
+/* ---------- Admin dashboard ---------- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 16px 0 20px;
+}
+
+.stat-card {
+  background: #f1efe8;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: #5f5e5a;
+  margin: 0 0 4px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.stat-danger {
+  color: #a32d2d;
+}
+
+.section-label {
+  font-size: 13px;
+  color: #5f5e5a;
+  margin: 0 0 10px;
+}
+
+.bar-row {
+  margin-bottom: 14px;
+}
+
+.bar-row-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.bar-row-count {
+  color: #5f5e5a;
+  font-size: 12px;
+}
+
+.bar-track {
+  background: #f1efe8;
+  border-radius: 6px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 6px;
+}
+
+.bar-fill.bar-ok {
+  background: #378add;
+}
+
+.bar-fill.bar-danger {
+  background: #e24b4a;
+}
+
+/* ---------- Admin: roster management ---------- */
+.roster-form {
+  background: #f1efe8;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.roster-form select,
+.roster-form input {
+  width: 100%;
+  padding: 9px 11px;
+  margin-bottom: 8px;
+  border: 1px solid #d3d1c7;
+  border-radius: 8px;
+  font-size: 13px;
+  background: white;
+}
+
+.roster-form button {
+  width: 100%;
+  background: var(--ksu-blue);
+  color: white;
+  border: none;
+  padding: 9px;
+  border-radius: 2px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.roster-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.4fr 0.8fr 1.4fr;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #ededea;
+  font-size: 12px;
+  align-items: center;
+}
+
+.roster-row-id {
+  font-weight: 500;
+}
+
+.roster-row-role {
+  color: #5f5e5a;
+}
+
+.roster-row-extra {
+  color: #5f5e5a;
+  font-size: 11px;
+}
+
+/* ---------- Login page ---------- */
+body {
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Soft colored shape behind the bottom of the page, echoing the
+   reference screenshot's blue wave, without copying it literally. */
+body::before {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 45vh;
+  background: var(--ksu-blue);
+  opacity: 0.07;
+  border-radius: 50% 50% 0 0 / 18% 18% 0 0;
+  z-index: -1;
+}
+
+#login-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 460px;
+}
+
+.brand-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.brand-logo {
+  width: 150px;
+  object-fit: contain;
+}
+.brand-header h1 {
+  color: var(--ksu-blue);
+  font-weight: 600;
+  font-size: 25px;
+  font-family: 'Lato', 'Noto Sans KR', -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.page-title {
+  font-size: 18px;
+  font-weight: 500;
+  text-align: center;
+  margin: 0;
+  width: 100%;
+  color: var(--ksu-sub);
+}
+
+/* ---------- Tabbed auth card ---------- */
+.auth-tabs-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.tab-row {
+  display: flex;
+  border-bottom: 1px solid #ededea;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 14px 8px;
+  border: none;
+  background: #f1efe8;
+  font-size: 14px;
+  font-weight: 500;
+  color: #5f5e5a;
+  cursor: pointer;
+  margin: 0;
+  border-radius: 0;
+}
+
+.tab-btn.active {
+  background: white;
+  color: var(--ksu-blue);
+  box-shadow: inset 0 -2px 0 var(--ksu-blue);
+}
+
+.tab-panel {
+  padding: 22px 24px 24px;
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  color: #5f5e5a;
+  margin: -2px 0 6px;
+}
+
+#login-area select {
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid #d3d1c7;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+}
+
+/* ---------- KSU-style login heading ---------- */
+.login-heading {
+  font-size: 20px;
+  font-weight: 500;
+  margin: 0 0 16px;
+}
+
+.login-heading mark {
+  background: none;
+  color: var(--ksu-blue);
+  font-weight: 700;
+}
+
+.save-id-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #5f5e5a;
+  margin: -2px 0 14px;
+  cursor: pointer;
+}
+
+.save-id-row input {
+  width: auto;
+  margin: 0;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: #888780;
+  margin: 10px 0 0;
+}
+
+#tab-student button#student-login-btn,
+#tab-mentor button#mentor-login-btn {
+  background: var(--ksu-blue);
+  color: white;
+  border: none;
+}
+
+.role-card {
+  position: relative;
+}
+
+.role-label {
+  position: absolute;
+  top: -10px;
+  left: 20px;
+  background: var(--ksu-blue);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-row button {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* ============================================================
+   1. TOP BAR & LANGUAGE SELECTOR
+============================================================ */
+.app-topbar {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 12px;
+  z-index: 10;
+}
+
+.lang-picker {
+  display: inline-flex;
+  align-items: center;
+  background: white;
+  border: 1px solid #d3d1c7;
+  border-radius: 20px;
+  padding: 4px 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.lang-icon {
+  font-size: 14px;
+  margin-right: 6px;
+}
+
+.lang-picker select {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  outline: none;
+  padding: 2px 0;
+}
+
+/* ============================================================
+   2. CHECKLIST ENHANCEMENTS (DOCUMENTS & ACTIONS)
+============================================================ */
+#checklist li {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 12px 0;
+  border-top: 1px solid #ededea;
+}
+
+.task-main-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.task-main-row label {
+  flex: 1;
+  margin-right: 8px;
+}
+
+.task-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-left: 28px;
+  font-size: 12px;
+}
+
+.doc-btn {
+  background: #f1efe8;
+  border: 1px solid #d3d1c7;
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #333;
+  transition: all 0.15s ease;
+  width: auto;
+  margin: 0;
+}
+
+.doc-btn:hover {
+  background: #e5e3dc;
+  border-color: #bcbaaE;
+}
+
+.doc-status-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.doc-pending {
+  background: #fff8e1;
+  color: #b78103;
+  border: 1px solid #ffe082;
+}
+
+.doc-approved {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+
+.doc-rejected {
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ffcdd2;
+}
+
+/* Chat Button in Student Mentor Card */
+.chat-trigger-btn {
+  background: var(--ksu-blue);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  transition: background 0.15s ease;
+}
+
+.chat-trigger-btn:hover {
+  background: var(--ksu-blue-dark);
+}
+
+.mentee-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-small-chat {
+  background: #e8f1f9;
+  color: var(--ksu-blue);
+  border: 1px solid #bcd7f0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto;
+  margin: 0;
+}
+
+.btn-small-chat:hover {
+  background: #d4e6f7;
+}
+
+/* ============================================================
+   3. DOCUMENT VERIFICATION MODAL
+============================================================ */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 16px;
+}
+
+.modal-card {
+  background: white;
+  border-radius: 10px;
+  max-width: 500px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #ededea;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--ksu-text);
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #888;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  width: auto;
+  margin: 0;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+.doc-meta-info {
+  background: #f9fbfd;
+  border: 1px solid #e1e8ed;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.doc-meta-info p {
+  margin: 4px 0;
+}
+
+.doc-preview-area {
+  min-height: 180px;
+  max-height: 320px;
+  background: #f4f3ef;
+  border: 1px dashed #d3d1c7;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.doc-preview-img {
+  max-width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+}
+
+.doc-preview-placeholder {
+  color: #777;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+
+.modal-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #d3d1c7;
+  border-radius: 6px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.modal-footer {
+  padding: 14px 20px;
+  border-top: 1px solid #ededea;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  background: #fafaf9;
+}
+
+.modal-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid #d3d1c7;
+  background: white;
+  width: auto;
+  margin: 0;
+}
+
+.modal-btn.primary {
+  background: var(--ksu-blue);
+  color: white;
+  border: none;
+}
+
+.modal-btn.success {
+  background: #2e7d32;
+  color: white;
+  border: none;
+}
+
+.modal-btn.danger {
+  background: #c62828;
+  color: white;
+  border: none;
+}
+
+/* ============================================================
+   4. IN-APP REAL-TIME CHAT WIDGET
+============================================================ */
+.chat-widget {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 360px;
+  height: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  z-index: 1500;
+  overflow: hidden;
+  border: 1px solid #e1e8ed;
+  animation: chatSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes chatSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.chat-header {
+  background: var(--ksu-blue);
+  color: white;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chat-header-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-avatar {
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+
+.chat-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.chat-role-badge {
+  font-size: 11px;
+  color: #d0e4f7;
+}
+
+.chat-close-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  width: auto;
+  margin: 0;
+  opacity: 0.85;
+}
+
+.chat-close-btn:hover {
+  opacity: 1;
+}
+
+.chat-messages {
+  flex: 1;
+  padding: 14px 16px;
+  overflow-y: auto;
+  background: #f9fbfd;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-empty-hint {
+  text-align: center;
+  color: #888780;
+  font-size: 12px;
+  margin: auto;
+  padding: 20px;
+}
+
+.chat-msg-group {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+}
+
+.chat-msg-group.me {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-msg-group.them {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.chat-sender-tag {
+  font-size: 10px;
+  color: #777;
+  margin-bottom: 2px;
+  padding: 0 4px;
+}
+
+.chat-bubble {
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.chat-msg-group.me .chat-bubble {
+  background: var(--ksu-blue);
+  color: white;
+  border-bottom-right-radius: 3px;
+}
+
+.chat-msg-group.them .chat-bubble {
+  background: #eef2f6;
+  color: #222;
+  border-bottom-left-radius: 3px;
+}
+
+.chat-time {
+  font-size: 10px;
+  color: #999;
+  margin-top: 3px;
+  padding: 0 4px;
+}
+
+.chat-input-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: white;
+  border-top: 1px solid #ededea;
+}
+
+.chat-input-bar input {
+  flex: 1;
+  border: 1px solid #d3d1c7;
+  border-radius: 20px;
+  padding: 8px 14px;
+  font-size: 13px;
+  outline: none;
+  background: #f9fbfd;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.chat-input-bar input:focus {
+  border-color: var(--ksu-blue);
+}
+
+.chat-input-bar button {
+  background: var(--ksu-blue);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.chat-input-bar button:hover {
+  background: var(--ksu-blue-dark);
+}
+
+/* Mentee review action button */
+.mentee-task-proof-btn {
+  background: #fff;
+  border: 1px solid #0060ac;
+  color: #0060ac;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  cursor: pointer;
+  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.mentee-task-proof-btn:hover {
+  background: #f0f7ff;
+}
+
+/* ============================================================
+   5. REAL-TIME TOAST NOTIFICATIONS
+============================================================ */
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 360px;
+  width: calc(100vw - 32px);
+  pointer-events: none;
+}
+
+.toast-item {
+  background: white;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+  border-left: 5px solid var(--ksu-blue);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  pointer-events: auto;
+  animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.25s ease;
+}
+
+.toast-item.removing {
+  opacity: 0;
+  transform: translateX(30px);
+}
+
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateY(-16px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.toast-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #e8f1f9;
+  color: var(--ksu-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.toast-body {
+  flex: 1;
+}
+
+.toast-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+
+.toast-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111;
+  margin: 0;
+}
+
+.toast-time {
+  font-size: 11px;
+  color: #888;
+}
+
+.toast-message {
+  font-size: 13px;
+  color: #444;
+  margin: 0 0 10px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.toast-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.toast-btn-reply {
+  background: var(--ksu-blue);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto;
+  margin: 0;
+}
+
+.toast-btn-reply:hover {
+  background: var(--ksu-blue-dark);
+}
+
+.toast-btn-close {
+  background: none;
+  border: 1px solid #d3d1c7;
+  color: #666;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  width: auto;
+  margin: 0;
+}
+
+/* Pulsing red dot for unread messages */
+.unread-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  background: #e53935;
+  border-radius: 50%;
+  margin-left: 6px;
+  box-shadow: 0 0 0 2px rgba(229, 57, 53, 0.3);
+  animation: pulseDot 1.6s infinite ease-in-out;
+}
+
+@keyframes pulseDot {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(229, 57, 53, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }
+}
+
+/* ============================================================
+   6. MENTOR DASHBOARD: CHAT WITH ADMIN BUTTON
+============================================================ */
+.mentor-office-bar {
+  margin: 12px 0 16px;
+}
+
+.btn-chat-admin {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #e8f1f9;
+  color: var(--ksu-blue);
+  border: 1px solid #bcd7f0;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin: 0;
+}
+
+.btn-chat-admin:hover {
+  background: #d4e6f7;
+  border-color: var(--ksu-blue);
+}
+
+.chat-btn-icon {
+  font-size: 16px;
+}
+
+/* ============================================================
+   7. ADMIN DASHBOARD: SEPARATE ROSTER CONTAINERS
+============================================================ */
+.roster-split-wrapper {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.roster-box {
+  background: white;
+  border: 1px solid #e1e8ed;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+.roster-box-header {
+  background: #f7fafc;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e1e8ed;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.roster-box-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.roster-box-title h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ksu-text);
+}
+
+.role-icon {
+  font-size: 18px;
+}
+
+.roster-count-badge {
+  font-size: 11px;
+  font-weight: 600;
+  background: #e8f1f9;
+  color: var(--ksu-blue);
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+.roster-table-header {
+  display: grid;
+  padding: 8px 14px;
+  background: #fafaf9;
+  border-bottom: 1px solid #ededea;
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+}
+
+.roster-table-header.mentor-cols {
+  grid-template-columns: 1.1fr 1.3fr 1.2fr 1fr 1.1fr;
+}
+
+.roster-table-header.student-cols {
+  grid-template-columns: 1.2fr 1.4fr 1.4fr 1fr;
+}
+
+.roster-table-body {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.roster-table-row {
+  display: grid;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f0ed;
+  font-size: 13px;
+  align-items: center;
+  transition: background 0.15s;
+}
+
+.roster-table-row:hover {
+  background: #fbfbfc;
+}
+
+.roster-table-row:last-child {
+  border-bottom: none;
+}
+
+.roster-table-row.mentor-cols {
+  grid-template-columns: 1.1fr 1.3fr 1.2fr 1fr 1.1fr;
+}
+
+.roster-table-row.student-cols {
+  grid-template-columns: 1.2fr 1.4fr 1.4fr 1fr;
+}
+
+.roster-cell-id {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ksu-blue);
+}
+
+.roster-cell-name {
+  font-weight: 500;
+}
+
+.roster-cell-muted {
+  color: #666;
+  font-size: 12px;
+}
+
+.btn-table-chat {
+  background: #e8f1f9;
+  color: var(--ksu-blue);
+  border: 1px solid #bcd7f0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s ease;
+}
+
+.btn-table-chat:hover {
+  background: #d4e6f7;
+  border-color: var(--ksu-blue);
+}
+
+.empty-roster-msg {
+  padding: 18px;
+  text-align: center;
+  color: #888;
+  font-size: 13px;
+}
+
+/* ============================================================
+   8. CLICKABLE STAT CARDS & ARC COMPLIANCE TRACKER
+============================================================ */
+.stat-card.clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  border: 1px solid transparent;
+  position: relative;
+}
+
+.stat-card.clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: #bcd7f0;
+}
+
+.stat-click-hint {
+  font-size: 10px;
+  color: var(--ksu-blue);
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+/* ARC Compliance Widget */
+.arc-card {
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #e1e8ed;
+  border-left: 5px solid #d97706;
+  padding: 18px 20px;
+  margin: 16px 0 20px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.arc-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.arc-card-header h3 {
+  margin: 0 0 2px;
+  font-size: 16px;
+  color: #111;
+}
+
+.btn-arc-inspect {
+  background: #fff8e1;
+  color: #b45309;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: auto;
+  margin: 0;
+}
+
+.btn-arc-inspect:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+
+.arc-progress-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.arc-mini-stat {
+  padding: 12px 16px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.arc-mini-stat.ok {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.arc-mini-stat.ok .arc-stat-num {
+  color: #166534;
+}
+
+.arc-mini-stat.danger {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.arc-mini-stat.danger .arc-stat-num {
+  color: #991b1b;
+}
+
+.arc-stat-num {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.arc-stat-label {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* ============================================================
+   9. MENTOR ACTIONS (SUBMIT MONTHLY REPORT)
+============================================================ */
+.mentor-office-bar {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+.mentor-office-bar button {
+  flex: 1;
+}
+
+.btn-submit-report {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #fdfaf2;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin: 0;
+}
+
+.btn-submit-report:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+
+/* ============================================================
+   10. MODAL FILTER CHIPS & DRILL-DOWN TABLES
+============================================================ */
+.modal-card.wide-modal {
+  max-width: 680px;
+}
+
+.modal-filter-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.filter-chip {
+  background: #f1efe8;
+  border: 1px solid #d3d1c7;
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: auto;
+  margin: 0;
+}
+
+.filter-chip.active {
+  background: var(--ksu-blue);
+  color: white;
+  border-color: var(--ksu-blue);
+}
+
+.roster-table-header.arc-cols,
+.roster-table-row.arc-cols {
+  grid-template-columns: 1.1fr 1.3fr 1.3fr 1.1fr;
+}
+
+.roster-table-header.reports-cols,
+.roster-table-row.reports-cols {
+  grid-template-columns: 1.2fr 1fr 0.9fr 1fr 1fr 1fr;
+}
+
+.roster-table-header.matched-cols,
+.roster-table-row.matched-cols {
+  grid-template-columns: 1.1fr 1.3fr 1.4fr 1.1fr;
+}
+
+.btn-assign-quick {
+  background: var(--ksu-blue);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 4px;
+  width: auto;
+}
+
+.select-assign-quick {
+  padding: 3px 6px;
+  border: 1px solid #d3d1c7;
+  border-radius: 4px;
+  font-size: 11px;
+  background: white;
+  max-width: 130px;
+}
+
+/* ============================================================
+   11. DELETE BUTTONS & TABLE ACTIONS
+============================================================ */
+.roster-table-header.mentor-cols,
+.roster-table-row.mentor-cols {
+  grid-template-columns: 1fr 1.2fr 1.1fr 0.9fr 1.5fr;
+}
+
+.roster-table-header.student-cols,
+.roster-table-row.student-cols {
+  grid-template-columns: 1.1fr 1.3fr 1.3fr 1.3fr;
+}
+
+.roster-actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-table-delete {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.15s ease;
+}
+
+.btn-table-delete:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #b91c1c;
+}
+
+/* ============================================================
+   12. MONTHLY REPORT PDF UPLOADS & PDF LISTING
+============================================================ */
+.pdf-upload-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.pdf-input-card {
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.pdf-input-card:last-child {
+  margin-bottom: 0;
+}
+
+.pdf-input-card.optional {
+  border-style: dashed;
+}
+
+.field-sublabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.modal-file-input {
+  font-size: 12px;
+  width: 100%;
+}
+
+/* PDF List in Admin Report Modal */
+.report-pdf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.report-pdf-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  gap: 12px;
+}
+
+.report-pdf-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.report-pdf-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.report-pdf-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.report-pdf-size {
+  font-size: 11px;
+  color: #64748b;
+  margin: 0;
+}
+
+.btn-pdf-view {
+  background: var(--ksu-blue);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  width: auto;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s ease;
+}
+
+.btn-pdf-view:hover {
+  background: var(--ksu-blue-dark);
+}
+
+/* ============================================================
+   13. ARC BROADCAST WARNING BUTTON
+============================================================ */
+.arc-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-arc-broadcast {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #f87171;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: auto;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-arc-broadcast:hover {
+  background: #fee2e2;
+  border-color: #ef4444;
+}
+
+/* ============================================================
+   14. CSV TOOLBAR & LIVE SEARCH/FILTERS
+============================================================ */
+.roster-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 24px;
+  margin-bottom: 10px;
+}
+
+.roster-toolbar-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-toolbar {
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  width: auto;
+  margin: 0;
+}
+
+.btn-toolbar:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: var(--ksu-blue);
+}
+
+.roster-filter-row {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px 4px;
+  align-items: center;
+}
+
+.select-filter {
+  padding: 9px 12px;
+  border: 1px solid #d3d1c7;
+  border-radius: 8px;
+  font-size: 13px;
+  background: white;
+  outline: none;
+  cursor: pointer;
+}
+
+.select-filter:focus {
+  border-color: var(--ksu-blue);
+}
+
+/* ============================================================
+   15. CAMPUS ANNOUNCEMENTS & NOTICES
+============================================================ */
+.announcements-widget {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.announcement-card {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-left: 4px solid #f59e0b;
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.announcement-card.urgent {
+  background: #fef2f2;
+  border-color: #fecaca;
+  border-left-color: #ef4444;
+}
+
+.announcement-card.immigration {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  border-left-color: var(--ksu-blue);
+}
+
+.announcement-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.announcement-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111;
+  margin: 0;
+}
+
+.announcement-date {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.announcement-body {
+  font-size: 12px;
+  color: #334155;
+  margin: 0;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.announcement-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 6px;
+}
+
+.tag-general { background: #fef3c7; color: #b45309; }
+.tag-urgent { background: #fee2e2; color: #b91c1c; }
+.tag-immigration { background: #dbeafe; color: #1e40af; }
+
+/* Admin Announcement Form & List */
+.announcement-form-card {
+  padding: 12px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.announcement-form-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.announcements-admin-list {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.announcement-admin-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.announcement-admin-delete {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 14px;
+  margin: 0;
+  width: auto;
+}
+
+.announcement-admin-delete:hover {
+  color: #ef4444;
+}
