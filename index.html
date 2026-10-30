@@ -3,23 +3,69 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>International Student Onboarding</title>
+  <title>KSU Compass - International Student Onboarding</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
   <!-- ============================================================
-       TOP BAR (LANGUAGE SELECTOR: ENGLISH & KOREAN ONLY)
+       GLOBAL TOPBAR / NAVIGATION (SCREENSHOTS 2, 4, 6)
   ============================================================ -->
-  <div class="app-topbar">
-    <div class="lang-picker">
-      <span class="lang-icon">🌐</span>
-      <select id="global-lang-select" aria-label="Select Language">
-        <option value="en">English (EN)</option>
-        <option value="ko">한국어 (KO)</option>
-      </select>
+  <header class="app-navbar" id="app-global-navbar">
+    <!-- Brand on Left -->
+    <div class="nav-left">
+      <img src="logo.jpeg" alt="Kyungsung University" class="nav-brand-logo" />
+      <div class="nav-brand-text">
+        <span class="nav-brand-title" data-i18n="brandName">KSU Compass</span>
+        <span class="nav-brand-portal-tag" id="nav-portal-tag">International Onboarding</span>
+      </div>
     </div>
-  </div>
+
+    <!-- Center Navigation Tabs (Role Specific) -->
+    <nav class="nav-center-tabs" id="nav-center-tabs" style="display: none;">
+      <!-- Populated dynamically based on student, mentor, or admin -->
+    </nav>
+
+    <!-- Right Controls: Language Selector, Notifications, Profile / Logout -->
+    <div class="nav-right">
+      <div class="lang-picker-pill">
+        <span style="margin-right: 4px;">🌐</span>
+        <select id="global-lang-select" aria-label="Select Language">
+          <option value="en">EN</option>
+          <option value="ko">KO</option>
+        </select>
+      </div>
+
+      <!-- Logged-in Controls (Hidden on Login Page) -->
+      <div id="nav-auth-controls" style="display: none; align-items: center; gap: 14px;">
+        <div class="nav-bell-wrapper" style="position: relative;">
+          <button type="button" class="nav-bell-btn" id="nav-bell-btn" title="Notifications">
+            🔔
+            <span class="nav-bell-dot" id="nav-unread-dot" style="display: none;"></span>
+          </button>
+
+          <!-- Bell Notifications Dropdown -->
+          <div id="nav-notifications-dropdown" class="nav-notifications-dropdown" style="display: none;">
+            <div class="notif-dropdown-header">
+              <strong>Notifications</strong>
+              <button type="button" id="btn-mark-all-read" class="notif-mark-read-btn">Mark all read</button>
+            </div>
+            <div id="nav-notifications-list" class="notif-dropdown-list">
+              <div class="notif-empty-state">No message notifications yet.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-user-profile">
+          <div class="user-avatar-circle" id="user-avatar-initials">KSU</div>
+          <div class="user-meta-text">
+            <span class="user-meta-name" id="nav-user-name">User</span>
+            <button type="button" class="nav-logout-btn logout-btn" data-i18n="logoutBtn">Log out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
 
   <!-- Real-Time In-App Toast Notification Banner Container -->
   <div id="toast-container" class="toast-container"></div>
@@ -29,573 +75,1039 @@
   <input type="file" id="roster-csv-input" accept=".csv" style="display: none;" />
 
   <!-- ============================================================
-       AUTH / LOGIN AREA
+       SCREENSHOT 1: PORTAL SIGN-IN (2-COLUMN HERO SPLIT)
   ============================================================ -->
-  <div id="login-area">
+  <main id="login-area" class="login-split-page">
+    <!-- Left Hero Column -->
+    <div class="login-left-content">
+      <div class="login-brand-header">
+        <div class="login-brand-icon-box">🧭</div>
+        <div>
+          <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #0f172a;" data-i18n="brandName">KSU Compass</h2>
+          <p style="margin: 2px 0 0; font-size: 13px; color: #64748b;" data-i18n="heroBadge">International Student Onboarding</p>
+        </div>
+      </div>
 
-    <div class="brand-header">
-      <img src="logo.jpeg" alt="Kyungsung University" class="brand-logo" />
-      <h1 class="page-title" data-i18n="pageTitle">International Student Onboarding</h1>
+      <div class="login-welcome-tag" data-i18n="loginWelcomeTag">WELCOME TO KSU COMPASS</div>
+
+      <h1 class="login-hero-headline" data-i18n="loginHeroHeadline">
+        Everything you<br />
+        need for a<br />
+        confident start.
+      </h1>
+
+      <p class="login-hero-subtext" data-i18n="loginHeroSubtext">
+        A simple place for international students, mentors, and the International Office to stay connected.
+      </p>
+
+      <div class="login-features-group">
+        <div class="login-feature-item">
+          <div class="login-feature-icon">✓</div>
+          <div class="login-feature-text">
+            <h4 data-i18n="feat1Title">Clear next steps</h4>
+            <p data-i18n="feat1Desc">Know what to do and when to do it.</p>
+          </div>
+        </div>
+
+        <div class="login-feature-item">
+          <div class="login-feature-icon">💬</div>
+          <div class="login-feature-text">
+            <h4 data-i18n="feat2Title">Support when you need it</h4>
+            <p data-i18n="feat2Desc">Keep students, mentors, and staff connected.</p>
+          </div>
+        </div>
+
+        <div class="login-feature-item">
+          <div class="login-feature-icon">📄</div>
+          <div class="login-feature-text">
+            <h4 data-i18n="feat3Title">Secure document flow</h4>
+            <p data-i18n="feat3Desc">Send ARC documents directly to the right team.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="login-left-footer">
+        <span>© 2026 KSU Compass</span>
+        <div>
+          <a href="#help" id="btn-open-login-help" data-i18n="helpCenter">Help center</a>
+        </div>
+      </div>
     </div>
 
-    <div class="card auth-tabs-card">
-      <div class="tab-row">
-        <button class="tab-btn active" data-tab="student" data-i18n="tabStudent">Student</button>
-        <button class="tab-btn" data-tab="mentor" data-i18n="tabMentor">Mentor</button>
-        <button class="tab-btn" data-tab="admin" data-i18n="tabAdmin">Admin</button>
+    <!-- Right Floating Auth Card (Current Input System Maintained) -->
+    <div class="login-card-right">
+      <div class="auth-card-eyebrow" data-i18n="accountAccess">ACCOUNT ACCESS</div>
+      <h2 class="auth-card-title" data-i18n="signInPortal">Sign in to your portal</h2>
+      <p class="auth-card-subtitle" data-i18n="signInPrompt">Choose your role, then continue with your account.</p>
+
+      <!-- Pill Role Tabs -->
+      <div class="auth-role-tabs">
+        <button type="button" class="auth-role-tab active" data-tab="student">
+          <span>👤</span> <span data-i18n="tabStudent">Student</span>
+        </button>
+        <button type="button" class="auth-role-tab" data-tab="mentor">
+          <span>👥</span> <span data-i18n="tabMentor">Mentor</span>
+        </button>
+        <button type="button" class="auth-role-tab" data-tab="admin">
+          <span>📄</span> <span data-i18n="tabAdmin">Admin</span>
+        </button>
       </div>
 
       <!-- ---------- STUDENT TAB ---------- -->
-      <div class="tab-panel" id="tab-student">
-        <h2 class="login-heading"><mark>Student</mark> Login</h2>
+      <form id="tab-student" class="auth-tab-panel" onsubmit="return false;">
+        <div class="auth-input-group">
+          <label class="auth-input-label" for="student-id" data-i18n="studentIdPlaceholder">Student ID (e.g. a2024691204)</label>
+          <div class="auth-input-wrapper">
+            <span class="auth-input-icon">👤</span>
+            <input type="text" id="student-id" class="auth-input" placeholder="a2024691204" autocomplete="username" />
+          </div>
+        </div>
 
-        <input type="text" id="student-id" placeholder="Student ID (e.g. a2024691204)" />
-        <input type="password" id="student-password" placeholder="Password" />
+        <div class="auth-input-group">
+          <label class="auth-input-label" for="student-password" data-i18n="passwordPlaceholder">Password</label>
+          <div class="auth-input-wrapper">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="student-password" class="auth-input" placeholder="••••••••" autocomplete="current-password" />
+            <button type="button" class="auth-password-toggle" data-target="student-password">Show</button>
+          </div>
+        </div>
 
-        <label class="save-id-row">
-          <input type="checkbox" id="student-save-id" />
-          <span data-i18n="saveId">Save ID</span>
-        </label>
+        <div class="auth-utility-row">
+          <label class="auth-remember-label">
+            <input type="checkbox" id="student-save-id" />
+            <span data-i18n="saveId">Remember me</span>
+          </label>
+          <a href="#help" class="auth-forgot-link" id="link-student-forgot" data-i18n="forgotPassword">Need help?</a>
+        </div>
 
-        <button id="student-login-btn" data-i18n="loginBtn">Log in</button>
-        <p class="error-text" id="student-error"></p>
-        <p class="hint-text" data-i18n="studentHint">Your ID and initial password are issued by the international office. Contact them if you can't log in.</p>
-      </div>
+        <button type="submit" id="student-login-btn" class="btn-auth-submit">
+          <span data-i18n="signInAsStudent">Sign in as Student →</span>
+        </button>
+        <p class="error-text" id="student-error" style="color: #dc2626; font-size: 13px; margin-top: 8px;"></p>
+      </form>
 
       <!-- ---------- MENTOR TAB ---------- -->
-      <div class="tab-panel" id="tab-mentor" style="display: none;">
-        <h2 class="login-heading"><mark>Mentor</mark> Login</h2>
+      <form id="tab-mentor" class="auth-tab-panel" style="display: none;" onsubmit="return false;">
+        <div class="auth-input-group">
+          <label class="auth-input-label" for="mentor-id" data-i18n="mentorIdPlaceholder">Mentor ID</label>
+          <div class="auth-input-wrapper">
+            <span class="auth-input-icon">👤</span>
+            <input type="text" id="mentor-id" class="auth-input" placeholder="Mentor ID" autocomplete="username" />
+          </div>
+        </div>
 
-        <input type="text" id="mentor-id" placeholder="Mentor ID" />
-        <input type="password" id="mentor-password" placeholder="Password" />
+        <div class="auth-input-group">
+          <label class="auth-input-label" for="mentor-password" data-i18n="passwordPlaceholder">Password</label>
+          <div class="auth-input-wrapper">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="mentor-password" class="auth-input" placeholder="••••••••" autocomplete="current-password" />
+            <button type="button" class="auth-password-toggle" data-target="mentor-password">Show</button>
+          </div>
+        </div>
 
-        <label class="save-id-row">
-          <input type="checkbox" id="mentor-save-id" />
-          <span data-i18n="saveId">Save ID</span>
-        </label>
+        <div class="auth-utility-row">
+          <label class="auth-remember-label">
+            <input type="checkbox" id="mentor-save-id" />
+            <span data-i18n="saveId">Remember me</span>
+          </label>
+          <a href="#help" class="auth-forgot-link" id="link-mentor-forgot" data-i18n="forgotPassword">Need help?</a>
+        </div>
 
-        <button id="mentor-login-btn" data-i18n="loginBtn">Log in</button>
-        <p class="error-text" id="mentor-error"></p>
-        <p class="hint-text" data-i18n="mentorHint">Your mentor ID is issued by the international office.</p>
-      </div>
+        <button type="submit" id="mentor-login-btn" class="btn-auth-submit">
+          <span data-i18n="signInAsMentor">Sign in as Mentor →</span>
+        </button>
+        <p class="error-text" id="mentor-error" style="color: #dc2626; font-size: 13px; margin-top: 8px;"></p>
+      </form>
 
       <!-- ---------- ADMIN TAB ---------- -->
-      <div class="tab-panel" id="tab-admin" style="display: none;">
-        <h2 class="login-heading"><mark>Admin</mark> Login</h2>
-        <p class="subtitle" data-i18n="adminSubtitle">International office access</p>
-
-        <input type="email" id="admin-email" placeholder="Email" />
-        <input type="password" id="admin-password" placeholder="Password" />
-
-        <div class="btn-row">
-          <button id="admin-login-btn" data-i18n="loginBtn">Log in</button>
-          <button id="admin-signup-btn" class="secondary" data-i18n="signupBtn">Sign up</button>
+      <form id="tab-admin" class="auth-tab-panel" style="display: none;" onsubmit="return false;">
+        <div class="auth-input-group">
+          <label class="auth-input-label" for="admin-email" data-i18n="emailPlaceholder">Admin Email</label>
+          <div class="auth-input-wrapper">
+            <span class="auth-input-icon">✉️</span>
+            <input type="email" id="admin-email" class="auth-input" placeholder="admin@ksu.ac.kr" autocomplete="username" />
+          </div>
         </div>
-        <p class="error-text" id="admin-error"></p>
+
+        <div class="auth-input-group">
+          <label class="auth-input-label" for="admin-password" data-i18n="passwordPlaceholder">Password</label>
+          <div class="auth-input-wrapper">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="admin-password" class="auth-input" placeholder="••••••••" autocomplete="current-password" />
+            <button type="button" class="auth-password-toggle" data-target="admin-password">Show</button>
+          </div>
+        </div>
+
+        <div class="auth-utility-row">
+          <button type="button" id="admin-signup-btn" class="auth-forgot-link" style="background: none; border: none; cursor: pointer; padding: 0;" data-i18n="signupBtn">
+            Need an account? Sign up
+          </button>
+        </div>
+
+        <button type="submit" id="admin-login-btn" class="btn-auth-submit">
+          <span data-i18n="signInAsAdmin">Sign in as Admin →</span>
+        </button>
+        <p class="error-text" id="admin-error" style="color: #dc2626; font-size: 13px; margin-top: 8px;"></p>
+      </form>
+    </div>
+  </main>
+
+  <!-- ============================================================
+       SCREENSHOTS 2 & 3: STUDENT PORTAL
+  ============================================================ -->
+  <div class="portal-main-container" id="checklist-card" style="display: none;">
+    <!-- Welcome Header Row -->
+    <div class="portal-page-header">
+      <div class="portal-header-left">
+        <span class="portal-role-eyebrow" data-i18n="brandPortalTagStudent">Student portal</span>
+        <h1 class="portal-page-title" id="student-welcome-heading">Good morning, Student</h1>
+        <p class="portal-page-subtitle" data-i18n="studentHeaderSub">You're making great progress. Let's keep your onboarding moving.</p>
+      </div>
+    </div>
+
+    <!-- Blue Progress Hero Banner with Circular Radial Gauge Chart -->
+    <div class="student-progress-banner">
+      <div class="banner-left">
+        <div class="banner-eyebrow" data-i18n="yourOnboarding">YOUR ONBOARDING</div>
+        <div class="banner-heading" id="progress-text">0 of 8 steps completed</div>
+        <p class="banner-subtext" data-i18n="onboardingBannerSub">Complete your next priority to stay on track for your first semester.</p>
+        
+        <div class="banner-bar-wrap">
+          <div class="banner-bar-track">
+            <div class="banner-bar-fill" id="student-horizontal-fill" style="width: 0%;"></div>
+          </div>
+          <span class="banner-bar-pct" id="student-pct-text">0% complete</span>
+        </div>
+      </div>
+
+      <!-- Circular Radial Gauge -->
+      <div class="banner-gauge-box">
+        <svg class="banner-gauge-svg" viewBox="0 0 100 100">
+          <circle class="gauge-bg-circle" cx="50" cy="50" r="40"></circle>
+          <circle class="gauge-val-circle" id="gauge-val-circle" cx="50" cy="50" r="40" stroke-dasharray="251.2" stroke-dashoffset="251.2"></circle>
+        </svg>
+        <div class="gauge-text-wrap">
+          <span class="gauge-pct-val" id="gauge-pct-val">0%</span>
+          <span class="gauge-pct-sub">complete</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2-Column Main Layout: Checklist Left, Widgets Right -->
+    <div class="student-grid-layout">
+      <!-- Left Column: Onboarding Checklist -->
+      <div class="checklist-card-box">
+        <div class="checklist-card-header">
+          <div class="checklist-title-wrap">
+            <h3 data-i18n="onboardingChecklist">Onboarding checklist</h3>
+            <p data-i18n="checklistSub">Everything you need for a smooth start</p>
+          </div>
+          <select id="checklist-task-filter" class="checklist-filter-select">
+            <option value="all" data-i18n="filterAllTasks">All tasks</option>
+            <option value="pending" data-i18n="filterPendingTasks">Pending</option>
+            <option value="done" data-i18n="filterDoneTasks">Completed</option>
+          </select>
+        </div>
+
+        <ul class="tasks-list" id="checklist">
+          <!-- 1. Housing -->
+          <li class="task-item-row" data-id="housing">
+            <div class="task-left-info">
+              <input type="checkbox" class="task-cb" />
+              <div class="task-text-group">
+                <span class="task-main-label task-title" data-task-id="housing">Move into dorm / housing</span>
+                <span class="task-sub-hint">Upload your housing confirmation</span>
+              </div>
+            </div>
+            <div class="task-right-actions">
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="housing">⇪ Add proof</button>
+              <span class="doc-status-badge"></span>
+            </div>
+          </li>
+
+          <!-- 2. ARC (Priority Accent) -->
+          <li class="task-item-row priority-task" data-id="arc">
+            <div class="task-left-info">
+              <input type="checkbox" class="task-cb" />
+              <div class="task-text-group">
+                <div class="task-title-row">
+                  <span class="task-main-label task-title" data-task-id="arc">Apply for ARC card</span>
+                  <span class="task-badge-priority" data-i18n="badgePriority">🕒 Priority</span>
+                </div>
+                <span class="task-sub-hint">Required for all international students (reviewed directly by International Office)</span>
+                <button type="button" class="checklist-guide-link-btn" id="checklist-arc-guide-btn" style="background: none; border: none; padding: 2px 0 0 0; font-size: 12px; font-weight: 600; color: var(--primary); cursor: pointer; text-align: left; display: inline-flex; align-items: center; gap: 4px;">
+                  <span>📋</span> <span data-i18n="viewArcGuideLink">View application process & requirements →</span>
+                </button>
+              </div>
+            </div>
+            <div class="task-right-actions">
+              <button type="button" class="btn-upload-proof doc-btn" data-task="arc">⇪ Upload proof</button>
+              <span class="doc-status-badge"></span>
+            </div>
+          </li>
+
+          <!-- 3. Phone Plan -->
+          <li class="task-item-row" data-id="phone">
+            <div class="task-left-info">
+              <input type="checkbox" class="task-cb" />
+              <div class="task-text-group">
+                <span class="task-main-label task-title" data-task-id="phone">Get a phone plan</span>
+                <span class="task-sub-hint">Your passport is enough — ARC not required</span>
+              </div>
+            </div>
+            <div class="task-right-actions">
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="phone">⇪ Add proof</button>
+              <span class="doc-status-badge"></span>
+            </div>
+          </li>
+
+          <!-- 4. Bank Account -->
+          <li class="task-item-row" data-id="bank">
+            <div class="task-left-info">
+              <input type="checkbox" class="task-cb" />
+              <div class="task-text-group">
+                <span class="task-main-label task-title" data-task-id="bank">Open a bank account</span>
+                <span class="task-sub-hint">Complete after receiving your phone number and ARC</span>
+              </div>
+            </div>
+            <div class="task-right-actions">
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="bank">⇪ Add proof</button>
+              <span class="doc-status-badge"></span>
+            </div>
+          </li>
+
+          <!-- 5. Health Insurance -->
+          <li class="task-item-row" data-id="insurance">
+            <div class="task-left-info">
+              <input type="checkbox" class="task-cb" />
+              <div class="task-text-group">
+                <span class="task-main-label task-title" data-task-id="insurance">Enroll in health insurance</span>
+                <span class="task-sub-hint">Submit your insurance confirmation</span>
+              </div>
+            </div>
+            <div class="task-right-actions">
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="insurance">⇪ Add proof</button>
+              <span class="doc-status-badge"></span>
+            </div>
+          </li>
+
+          <!-- 6. LMS -->
+          <li class="task-item-row" data-id="lms">
+            <div class="task-left-info">
+              <input type="checkbox" class="task-cb" />
+              <div class="task-text-group">
+                <span class="task-main-label task-title" data-task-id="lms">Set up LMS / student portal</span>
+                <span class="task-sub-hint">Activate your university account</span>
+              </div>
+            </div>
+            <div class="task-right-actions">
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="lms">⇪ Add proof</button>
+              <span class="doc-status-badge"></span>
+            </div>
+          </li>
+
+          <!-- 7. Library -->
+          <li class="task-item-row" data-id="library">
+            <div class="task-left-info">
+              <input type="checkbox" class="task-cb" />
+              <div class="task-text-group">
+                <span class="task-main-label task-title" data-task-id="library">Learn how to use the library</span>
+                <span class="task-sub-hint">Complete the library orientation</span>
+              </div>
+            </div>
+            <div class="task-right-actions">
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="library">⇪ Add proof</button>
+              <span class="doc-status-badge"></span>
+            </div>
+          </li>
+
+          <!-- 8. Student ID Card -->
+          <li class="task-item-row" data-id="transport">
+            <div class="task-left-info">
+              <input type="checkbox" class="task-cb" />
+              <div class="task-text-group">
+                <span class="task-main-label task-title" data-task-id="transport">Get a student ID card</span>
+                <span class="task-sub-hint">Apply for and receive your university student ID card</span>
+              </div>
+            </div>
+            <div class="task-right-actions">
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="transport">⇪ Add proof</button>
+              <span class="doc-status-badge"></span>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Right Column: Sidebar Widgets -->
+      <div class="student-sidebar">
+        <!-- 1. Your Mentor Card -->
+        <div class="mentor-summary-card">
+          <div class="mentor-card-top">
+            <h4 data-i18n="yourMentor">Your mentor</h4>
+            <span style="color: #94a3b8; font-size: 16px;">•••</span>
+          </div>
+
+          <div class="mentor-info-row" id="mentor-contact-info">
+            <div class="mentor-avatar-box">
+              <span id="mentor-avatar-initials">--</span>
+              <span class="mentor-online-badge"></span>
+            </div>
+            <div class="mentor-details-col">
+              <span class="mentor-name-text" id="mentor-display-name">Not Assigned Yet</span>
+              <span class="mentor-role-label" data-i18n="mentorRoleTitle">Student Success Mentor</span>
+              <span class="mentor-reply-status" id="mentor-phone-or-reply" data-i18n="mentorReplyTime">• Waiting for mentor assignment</span>
+            </div>
+          </div>
+
+          <button type="button" class="btn-mentor-msg-full" id="student-chat-mentor-btn">
+            💬 <span data-i18n="btnSendMessage">Send a message</span>
+            <span class="nav-bell-dot" id="student-mentor-unread-dot" style="position: static; display: none;"></span>
+          </button>
+        </div>
+
+        <!-- 2. UP NEXT: Apply for your ARC Card -->
+        <div class="up-next-card">
+          <div class="up-next-tag" data-i18n="upNextTag">UP NEXT</div>
+          <div class="up-next-icon-box">📄</div>
+          <h4 data-i18n="upNextArcTitle">Apply for your ARC</h4>
+          <p data-i18n="upNextArcDesc">Review the required documents before submitting your application.</p>
+          <button type="button" class="up-next-link-btn" id="btn-view-arc-guide-upnext">
+            <span data-i18n="viewArcGuideLink">View ARC guide →</span>
+          </button>
+        </div>
+
+        <!-- 3. Campus Announcements / Orientation Widget -->
+        <div class="orientation-widget-card" id="student-announcements-widget" style="flex-direction: column; align-items: stretch; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="orientation-icon-box">🔔</div>
+            <div class="orientation-details">
+              <h5 id="student-notice-title" data-i18n="campusOrientationTitle">Campus Announcements</h5>
+              <p id="student-notice-sub">No announcements posted yet.</p>
+            </div>
+          </div>
+          <div id="student-announcements-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- ============================================================
-       STUDENT DASHBOARD
+       SCREENSHOTS 4 & 5: MENTOR PORTAL
   ============================================================ -->
-  <div class="card" id="checklist-card" style="display: none;">
-    <div class="header-row">
-      <div>
-        <h1 data-i18n="welcomeTitle">Welcome!</h1>
-        <p class="subtitle" data-i18n="checklistSubtitle">Your onboarding checklist</p>
+  <div class="portal-main-container" id="mentor-dashboard-card" style="display: none;">
+    <!-- Page Header -->
+    <div class="portal-page-header">
+      <div class="portal-header-left">
+        <span class="portal-role-eyebrow" data-i18n="brandPortalTagMentor">Mentor portal</span>
+        <h1 class="portal-page-title" data-i18n="mentorPageTitle">Your mentees</h1>
+        <p class="portal-page-subtitle" data-i18n="mentorPageSub">Support your students and keep their onboarding on track.</p>
       </div>
-      <button class="secondary small logout-btn" data-i18n="logoutBtn">Log out</button>
-    </div>
-
-    <!-- Announcements Widget for Students -->
-    <div id="student-announcements-widget" class="announcements-widget" style="display: none;"></div>
-
-    <div id="mentor-contact-info"></div>
-
-    <p id="progress-text">0 of 8 done</p>
-
-    <ul id="checklist">
-      <li data-id="housing">
-        <div class="task-main-row">
-          <label><input type="checkbox" /><span class="task-title" data-task-id="housing">Move into dorm / housing</span></label>
-        </div>
-        <div class="task-actions-row">
-          <button type="button" class="doc-btn" data-task="housing">📎 Upload Proof</button>
-          <span class="doc-status-badge"></span>
-        </div>
-      </li>
-      <li data-id="arc">
-        <div class="task-main-row">
-          <label><input type="checkbox" /><span class="task-title" data-task-id="arc">Apply for ARC card</span></label>
-          <span class="tag tag-urgent" data-i18n="urgentTag">Time-sensitive</span>
-        </div>
-        <div class="task-actions-row">
-          <button type="button" class="doc-btn" data-task="arc">📎 Upload Proof</button>
-          <span class="doc-status-badge"></span>
-        </div>
-      </li>
-      <li data-id="phone">
-        <div class="task-main-row">
-          <label><input type="checkbox" /><span class="task-title" data-task-id="phone">Get a phone plan (passport is enough, ARC not required)</span></label>
-        </div>
-        <div class="task-actions-row">
-          <button type="button" class="doc-btn" data-task="phone">📎 Upload Proof</button>
-          <span class="doc-status-badge"></span>
-        </div>
-      </li>
-      <li data-id="bank">
-        <div class="task-main-row">
-          <label><input type="checkbox" /><span class="task-title" data-task-id="bank">Open a bank account (needs phone number + ARC)</span></label>
-        </div>
-        <div class="task-actions-row">
-          <button type="button" class="doc-btn" data-task="bank">📎 Upload Proof</button>
-          <span class="doc-status-badge"></span>
-        </div>
-      </li>
-      <li data-id="insurance">
-        <div class="task-main-row">
-          <label><input type="checkbox" /><span class="task-title" data-task-id="insurance">Enroll in health insurance</span></label>
-        </div>
-        <div class="task-actions-row">
-          <button type="button" class="doc-btn" data-task="insurance">📎 Upload Proof</button>
-          <span class="doc-status-badge"></span>
-        </div>
-      </li>
-      <li data-id="lms">
-        <div class="task-main-row">
-          <label><input type="checkbox" /><span class="task-title" data-task-id="lms">Set up LMS / student portal</span></label>
-        </div>
-        <div class="task-actions-row">
-          <button type="button" class="doc-btn" data-task="lms">📎 Upload Proof</button>
-          <span class="doc-status-badge"></span>
-        </div>
-      </li>
-      <li data-id="library">
-        <div class="task-main-row">
-          <label><input type="checkbox" /><span class="task-title" data-task-id="library">Learn how to use the library</span></label>
-        </div>
-        <div class="task-actions-row">
-          <button type="button" class="doc-btn" data-task="library">📎 Upload Proof</button>
-          <span class="doc-status-badge"></span>
-        </div>
-      </li>
-      <li data-id="transport">
-        <div class="task-main-row">
-          <label><input type="checkbox" /><span class="task-title" data-task-id="transport">Get a T-money card / learn transportation</span></label>
-        </div>
-        <div class="task-actions-row">
-          <button type="button" class="doc-btn" data-task="transport">📎 Upload Proof</button>
-          <span class="doc-status-badge"></span>
-        </div>
-      </li>
-    </ul>
-  </div>
-
-  <!-- ============================================================
-       MENTOR DASHBOARD
-  ============================================================ -->
-  <div class="card wide" id="mentor-dashboard-card" style="display: none;">
-    <div class="header-row">
-      <div>
-        <h1 id="mentor-title">Your mentees</h1>
-        <p class="subtitle" id="mentee-count">0 students</p>
+      <div class="portal-header-actions">
+        <button type="button" class="btn-secondary-action" id="mentor-chat-admin-btn">
+          💬 <span data-i18n="btnMessageOffice">Message office</span>
+          <span class="nav-bell-dot" id="mentor-admin-unread-dot" style="position: static; display: none;"></span>
+        </button>
+        <button type="button" class="btn-primary-action" id="mentor-open-report-btn">
+          <span>+</span> <span data-i18n="btnNewReport">New report</span>
+        </button>
       </div>
-      <button class="secondary small logout-btn" data-i18n="logoutBtn">Log out</button>
     </div>
 
-    <!-- Announcements Widget for Mentors -->
-    <div id="mentor-announcements-widget" class="announcements-widget" style="display: none;"></div>
-
-    <!-- Mentor Actions Bar: Chat with Admin + Submit Monthly Report -->
-    <div class="mentor-office-bar">
-      <button type="button" class="btn-chat-admin" id="mentor-chat-admin-btn">
-        <span class="chat-btn-icon">🏛️</span>
-        <span data-i18n="chatWithAdmin">Chat with International Office (Admin)</span>
-        <span class="unread-dot" id="mentor-admin-unread-dot" style="display: none;"></span>
-      </button>
-      <button type="button" class="btn-submit-report" id="mentor-open-report-btn">
-        <span class="chat-btn-icon">📋</span>
-        <span data-i18n="submitMonthlyReportBtn">Submit Monthly Report</span>
-      </button>
-    </div>
-
-    <input type="text" id="mentee-search" placeholder="Search by student ID or name..." class="search-input" />
-    <div id="mentee-list"></div>
-  </div>
-
-  <!-- ============================================================
-       ADMIN DASHBOARD
-  ============================================================ -->
-  <div class="card wide" id="admin-dashboard-card" style="display: none;">
-    <div class="header-row">
-      <div>
-        <h1 data-i18n="allStudentsOverview">All Students Overview</h1>
-        <p class="subtitle" data-i18n="adminOverviewSubtitle">Every international student's onboarding progress</p>
+    <!-- 3 KPI Metric Cards (Screenshot 4 - Initialized to 0) -->
+    <div class="metrics-kpi-grid">
+      <div class="kpi-card-box">
+        <div class="kpi-icon-square blue">👥</div>
+        <div class="kpi-content-col">
+          <span class="kpi-label-text" data-i18n="kpiAssignedStudents">Assigned students</span>
+          <span class="kpi-value-text" id="kpi-mentor-assigned-count">0</span>
+          <span class="kpi-sub-text" id="kpi-mentor-assigned-sub">0 active</span>
+        </div>
       </div>
-      <button class="secondary small logout-btn" data-i18n="logoutBtn">Log out</button>
+
+      <div class="kpi-card-box">
+        <div class="kpi-icon-square orange">🕒</div>
+        <div class="kpi-content-col">
+          <span class="kpi-label-text" data-i18n="kpiNeedAttention">Need attention</span>
+          <span class="kpi-value-text" id="kpi-mentor-attention-count">0</span>
+          <span class="kpi-sub-text" data-i18n="kpiReviewWeek">Review this week</span>
+        </div>
+      </div>
+
+      <div class="kpi-card-box">
+        <div class="kpi-icon-square green">📄</div>
+        <div class="kpi-content-col">
+          <span class="kpi-label-text" data-i18n="kpiMonthlyReport">Monthly report</span>
+          <span class="kpi-value-text" id="kpi-mentor-report-status">0 submitted</span>
+          <span class="kpi-sub-text" id="kpi-mentor-report-sub">Click + New report to submit</span>
+        </div>
+      </div>
     </div>
 
-    <!-- Stat Grid: Clickable "Matched with mentor" card -->
-    <div class="stat-grid" id="stat-grid"></div>
+    <!-- Mentor Campus Announcements Banner (if any) -->
+    <div id="mentor-announcements-banner" style="display: none; margin-bottom: 20px;"></div>
 
-    <!-- FOCUSED ARC COMPLIANCE TRACKER + ONE-CLICK WARNING BROADCAST -->
-    <div class="arc-card" id="admin-arc-card">
-      <div class="arc-card-header">
+    <!-- Student Progress 2-Column Cards Grid -->
+    <div class="mentee-progress-section">
+      <div class="mentee-section-header">
+        <div class="mentee-title-group">
+          <h3 data-i18n="studentProgress">Student progress</h3>
+          <p id="mentor-month-label">Current Semester</p>
+        </div>
+        <input type="text" id="mentee-search" class="mentee-search-input" placeholder="Search students..." />
+      </div>
+
+      <div class="mentee-cards-grid" id="mentee-list">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+
+    <!-- Mentor Submitted Monthly Reports History -->
+    <div class="recent-activity-section" id="mentor-reports-history-section" style="margin-bottom: 24px;">
+      <div class="activity-header">
         <div>
-          <h3 data-i18n="arcComplianceTitle">Alien Registration Card (ARC) Tracking</h3>
-          <p class="subtitle" style="margin: 0;" data-i18n="arcSubtitle">Mandatory immigration requirement for all foreign students</p>
+          <h4>My Submitted Monthly Reports</h4>
+          <p>Reports and PDF attachments sent to the International Office</p>
         </div>
-        <div class="arc-card-actions">
-          <button type="button" class="btn-arc-inspect" id="btn-view-arc-pending" data-i18n="viewArcPendingBtn">
-            View Students Who Haven't Applied for ARC
-          </button>
-          <button type="button" class="btn-arc-broadcast" id="btn-broadcast-arc-warning" data-i18n="broadcastArcWarningBtn">
-            🚨 Send Warning to All Pending Students
-          </button>
-        </div>
+        <button type="button" class="btn-secondary-action" id="mentor-open-report-btn-2" style="padding: 6px 12px; font-size: 12.5px;">+ Submit Report</button>
       </div>
-      <div class="arc-progress-grid">
-        <div class="arc-mini-stat ok">
-          <span class="arc-stat-num" id="arc-done-count">0</span>
-          <span class="arc-stat-label" data-i18n="arcApplied">Applied / Completed</span>
-        </div>
-        <div class="arc-mini-stat danger">
-          <span class="arc-stat-num" id="arc-pending-count">0</span>
-          <span class="arc-stat-label" data-i18n="arcNotApplied">Not Applied Yet</span>
-        </div>
+      <div id="mentor-own-reports-list" class="activity-feed-list">
+        <div style="padding: 16px; text-align: center; color: #94a3b8; font-size: 13px;">0 reports submitted yet.</div>
       </div>
     </div>
 
-    <!-- CAMPUS ANNOUNCEMENTS & NOTICES MANAGEMENT (INTERNATIONAL OFFICE BROADCAST) -->
-    <div class="roster-box" id="admin-announcements-box">
-      <div class="roster-box-header">
-        <div class="roster-box-title">
-          <span class="role-icon">📢</span>
-          <h3 data-i18n="announcementsTitle">Campus Announcements & Notices</h3>
-        </div>
-        <span class="roster-count-badge" id="admin-announcements-count">0 notices</span>
-      </div>
-      <div class="announcement-form-card">
-        <input type="text" id="announcement-title-input" placeholder="Notice Title (e.g. Group ARC Application Schedule)" class="modal-input" style="margin-bottom: 8px;" />
-        <textarea id="announcement-content-input" rows="2" placeholder="Notice details for international students and mentors..." class="modal-input" style="margin-bottom: 8px; resize: vertical;"></textarea>
-        <div class="announcement-form-row">
-          <select id="announcement-tag-input" class="select-filter" style="max-width: 160px; margin: 0;">
-            <option value="General">General</option>
-            <option value="Urgent">🚨 Urgent</option>
-            <option value="Immigration / ARC">🪪 Immigration / ARC</option>
-          </select>
-          <button type="button" id="btn-post-announcement" class="modal-btn primary" style="padding: 7px 16px;">
-            📢 <span data-i18n="postAnnouncementBtn">Post Notice</span>
-          </button>
+    <!-- Recent Activity Feed (Screenshot 5) -->
+    <div class="recent-activity-section">
+      <div class="activity-header">
+        <div>
+          <h4 data-i18n="recentActivity">Recent activity</h4>
+          <p data-i18n="recentActivitySub">Updates from your mentees</p>
         </div>
       </div>
-      <div id="admin-announcements-list" class="announcements-admin-list"></div>
-    </div>
 
-    <!-- BULK CSV IMPORT & EXPORT TOOLBAR -->
-    <div class="roster-toolbar">
-      <span style="font-weight: 600; font-size: 13px; color: #333;" data-i18n="addToRoster">Add to roster:</span>
-      <div class="roster-toolbar-btns">
-        <button type="button" class="btn-toolbar" id="btn-import-csv">
-          <span data-i18n="importCsvBtn">📥 Import Roster (CSV)</span>
+      <div class="activity-feed-list" id="mentor-activity-feed">
+        <div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 13px;">No recent mentee activity yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       SCREENSHOTS 6, 7 & 8: ADMIN PORTAL (ALL NUMBERS INITIALIZED TO 0)
+  ============================================================ -->
+  <div class="portal-main-container" id="admin-dashboard-card" style="display: none;">
+    <!-- Page Header -->
+    <div class="portal-page-header">
+      <div class="portal-header-left">
+        <span class="portal-role-eyebrow" data-i18n="brandPortalTagAdmin">Admin portal</span>
+        <h1 class="portal-page-title" data-i18n="adminPageTitle">International office</h1>
+        <p class="portal-page-subtitle" data-i18n="adminPageSub">A clear view of student onboarding, ARC submissions, and mentor activity.</p>
+      </div>
+      <div class="portal-header-actions">
+        <button type="button" class="btn-secondary-action" id="btn-open-add-person-top">
+          + <span data-i18n="btnAddPerson">Add person</span>
         </button>
-        <button type="button" class="btn-toolbar" id="btn-export-csv">
-          <span data-i18n="exportCsvBtn">📤 Export to CSV</span>
+        <button type="button" class="btn-secondary-action" id="btn-export-csv">
+          ⤓ <span data-i18n="btnExportData">Export data</span>
+        </button>
+        <button type="button" class="btn-primary-action" id="btn-import-csv">
+          ⇪ <span data-i18n="btnImportCsv">Import CSV</span>
         </button>
       </div>
     </div>
 
-    <!-- Manual Add to Roster Form -->
-    <div class="roster-form">
-      <select id="roster-role">
-        <option value="student">Student</option>
-        <option value="mentor">Mentor</option>
-      </select>
-      <input type="text" id="roster-id" placeholder="ID (e.g. a2024691204)" />
-      <input type="text" id="roster-name" placeholder="Name" />
-      <input type="tel" id="roster-phone" placeholder="Phone (mentor only)" style="display: none;" />
-      <select id="roster-mentor-id" style="display: block;">
-        <option value="">Assign a mentor...</option>
-      </select>
-      <button id="roster-add-btn" data-i18n="addToRosterBtn">Add to roster</button>
-      <p class="error-text" id="roster-error"></p>
-    </div>
-
-    <!-- SEPARATE ROSTER CONTAINERS: MENTORS & STUDENTS -->
-    <div class="roster-split-wrapper">
-      <!-- 1. MENTORS ROSTER CONTAINER WITH LIVE SEARCH -->
-      <div class="roster-box" id="admin-mentors-box">
-        <div class="roster-box-header">
-          <div class="roster-box-title">
-            <span class="role-icon">🧑🏫</span>
-            <h3 data-i18n="adminMentorsList">Registered Mentors</h3>
-          </div>
-          <span class="roster-count-badge" id="admin-mentor-count">0 mentors</span>
+    <!-- 4 KPI Summary Cards (Screenshot 6 - Strictly 0 by default) -->
+    <div class="admin-kpi-grid" id="stat-grid">
+      <div class="kpi-card-box">
+        <div class="kpi-icon-square blue">👥</div>
+        <div class="kpi-content-col">
+          <span class="kpi-label-text" data-i18n="kpiTotalStudents">Total students</span>
+          <span class="kpi-value-text" id="kpi-admin-total-students">0</span>
+          <span class="kpi-sub-text" id="kpi-admin-total-students-sub" style="color: #16a34a;">0 registered</span>
         </div>
-        <div style="padding: 10px 14px 4px;">
-          <input type="text" id="admin-search-mentors" class="search-input" placeholder="Search mentors by ID or name..." style="margin: 0; width: 100%;" />
-        </div>
-        <div class="roster-table-header mentor-cols">
-          <span>ID</span>
-          <span>Name</span>
-          <span>Phone</span>
-          <span>Assigned Mentees</span>
-          <span>Actions</span>
-        </div>
-        <div id="roster-mentors-list" class="roster-table-body"></div>
       </div>
 
-      <!-- 2. STUDENTS ROSTER CONTAINER WITH LIVE SEARCH & FILTER -->
-      <div class="roster-box" id="admin-students-box">
-        <div class="roster-box-header">
-          <div class="roster-box-title">
-            <span class="role-icon">🎓</span>
-            <h3 data-i18n="adminStudentsList">Registered Students</h3>
-          </div>
-          <span class="roster-count-badge" id="admin-student-count">0 students</span>
+      <div class="kpi-card-box">
+        <div class="kpi-icon-square green">✓</div>
+        <div class="kpi-content-col">
+          <span class="kpi-label-text" data-i18n="kpiOnboardingComplete">Onboarding complete</span>
+          <span class="kpi-value-text" id="kpi-admin-completion-pct">0%</span>
+          <span class="kpi-sub-text" id="kpi-admin-completion-sub" style="color: #16a34a;">0 of 0 students completed</span>
         </div>
-        <div class="roster-filter-row">
-          <input type="text" id="admin-search-students" class="search-input" placeholder="Search students by ID, name, or mentor..." style="flex: 2; margin: 0;" />
-          <select id="admin-filter-students" class="select-filter" style="flex: 1; margin: 0;">
-            <option value="all">All Students</option>
-            <option value="unmatched">Unassigned Mentor</option>
-            <option value="matched">Matched</option>
-            <option value="arc-pending">ARC Not Applied</option>
-            <option value="arc-done">ARC Completed</option>
+      </div>
+
+      <div class="kpi-card-box">
+        <div class="kpi-icon-square orange">📄</div>
+        <div class="kpi-content-col">
+          <span class="kpi-label-text" data-i18n="kpiArcProofsToReview">ARC proofs to review</span>
+          <span class="kpi-value-text" id="kpi-admin-arc-queue">0</span>
+          <span class="kpi-sub-text" id="kpi-admin-arc-sub" style="color: #ea580c;">0 pending review</span>
+        </div>
+      </div>
+
+      <div class="kpi-card-box">
+        <div class="kpi-icon-square purple">👤</div>
+        <div class="kpi-content-col">
+          <span class="kpi-label-text" data-i18n="kpiActiveMentors">Active mentors</span>
+          <span class="kpi-value-text" id="kpi-admin-active-mentors">0</span>
+          <span class="kpi-sub-text" id="kpi-admin-mentors-sub">0 students average</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dedicated ARC Proof Reviews Section (Direct Table in Admin Dashboard) -->
+    <div class="admin-arc-reviews-box" id="admin-arc-card">
+      <div class="arc-reviews-header">
+        <div class="arc-reviews-title-wrap">
+          <h3 data-i18n="arcReviewsSectionTitle">ARC proof reviews</h3>
+          <p data-i18n="arcReviewsSectionSub">Student uploads come directly to the International Office</p>
+        </div>
+        <span class="arc-pending-badge-pill" id="admin-arc-pending-badge">0 pending</span>
+      </div>
+
+      <div class="arc-reviews-filter-bar">
+        <input type="text" id="admin-search-arc-reviews" class="mentee-search-input" placeholder="Search student or ID..." style="width: 280px;" />
+        <select id="admin-filter-arc-status" class="checklist-filter-select">
+          <option value="all" selected>All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+
+      <div class="arc-table-container">
+        <table class="clean-admin-table" id="admin-arc-table">
+          <thead>
+            <tr>
+              <th data-i18n="thStudent">STUDENT</th>
+              <th data-i18n="thDocument">DOCUMENT</th>
+              <th data-i18n="thSubmitted">SUBMITTED</th>
+              <th data-i18n="thStatus">STATUS</th>
+              <th data-i18n="thAction">ACTION</th>
+            </tr>
+          </thead>
+          <tbody id="admin-arc-tbody">
+            <tr>
+              <td colspan="5" style="text-align: center; padding: 28px; color: #94a3b8;">No ARC proof submissions found (0).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="arc-reviews-footer">
+        <span id="admin-arc-table-count">Showing 0 submissions</span>
+        <button type="button" id="btn-broadcast-arc-warning" style="background: none; border: none; color: #dc2626; font-size: 12.5px; font-weight: 600; cursor: pointer;">
+          🚨 Send Warning to Pending Students
+        </button>
+      </div>
+    </div>
+
+    <!-- 2-Column Split: Import Roster Drag-and-Drop + Needs Attention (Screenshot 7) -->
+    <div class="admin-split-widgets">
+      <!-- Left: Import Student Roster -->
+      <div class="admin-widget-card">
+        <div class="widget-icon-header">
+          <div class="widget-icon-box">⇪</div>
+        </div>
+        <h3 data-i18n="importRosterTitle">Import student roster</h3>
+        <p data-i18n="importRosterSub">Upload an Excel-compatible CSV to add or update students and mentors in bulk.</p>
+        
+        <div class="csv-drag-drop-zone" id="csv-drag-drop-zone">
+          <span class="csv-zone-icon">📄</span>
+          <span class="csv-zone-title" data-i18n="chooseCsvFile">Choose a CSV file</span>
+          <span class="csv-zone-subtitle" data-i18n="dragDropHere">or drag and drop here</span>
+          <span style="font-size: 10.5px; color: #94a3b8;" data-i18n="csvMaxMb">CSV · Supports Role,ID,Name,MentorID/Phone</span>
+        </div>
+
+        <a href="#template" class="csv-template-link" id="link-download-csv-template">
+          ⤓ <span data-i18n="downloadCsvTemplate">Download CSV template</span>
+        </a>
+      </div>
+
+      <!-- Right: Needs Attention List (All initialized to 0) -->
+      <div class="admin-widget-card">
+        <div class="widget-icon-header">
+          <h3 style="margin: 0;" data-i18n="needsAttentionTitle">Needs attention</h3>
+          <span class="arc-pending-badge-pill" id="needs-attention-badge">0</span>
+        </div>
+        <p style="margin-bottom: 14px;">Urgent items requiring staff coordination</p>
+
+        <div class="needs-attention-list">
+          <div class="attention-item-row" id="btn-attention-arc">
+            <div class="attention-item-left">
+              <span class="attention-dot red"></span>
+              <div class="attention-text-col">
+                <strong><span id="attention-arc-count">0 students</span> haven't applied for ARC</strong>
+                <span data-i18n="attentionArcDeadline">Within 90 days of arrival</span>
+              </div>
+            </div>
+            <span class="attention-arrow">→</span>
+          </div>
+
+          <div class="attention-item-row" id="btn-attention-reports">
+            <div class="attention-item-left">
+              <span class="attention-dot orange"></span>
+              <div class="attention-text-col">
+                <strong><span id="attention-reports-count">0 mentor reports</span> pending review</strong>
+                <span data-i18n="attentionReportsPeriod">Monthly reporting period</span>
+              </div>
+            </div>
+            <span class="attention-arrow">→</span>
+          </div>
+
+          <div class="attention-item-row" id="btn-attention-unassigned">
+            <div class="attention-item-left">
+              <span class="attention-dot blue"></span>
+              <div class="attention-text-col">
+                <strong><span id="attention-unassigned-count">0 students</span> unassigned</strong>
+                <span data-i18n="attentionWaitingMentor">Click to assign mentors</span>
+              </div>
+            </div>
+            <span class="attention-arrow">→</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- People Overview Card (Screenshot 8 - Open & Interactive with 0 defaults) -->
+    <div class="people-overview-card" id="admin-people-card" style="margin-bottom: 24px;">
+      <div class="people-overview-header">
+        <div>
+          <h3 style="margin: 0 0 2px 0; font-size: 18px; font-weight: 800;" data-i18n="peopleOverviewTitle">People overview</h3>
+          <p style="margin: 0; font-size: 13px; color: #64748b;" data-i18n="peopleOverviewSub">Manage students and mentors, assign mentors, and perform bulk actions</p>
+        </div>
+        <button type="button" class="btn-primary-action" id="btn-open-add-person">
+          + <span data-i18n="btnAddPerson">Add person</span>
+        </button>
+      </div>
+
+      <div class="people-overview-tabs">
+        <button type="button" class="people-tab-btn active" data-people-tab="students">
+          <span data-i18n="tabStudents">Students</span> <span id="people-tab-students-count">[0]</span>
+        </button>
+        <button type="button" class="people-tab-btn" data-people-tab="mentors">
+          <span data-i18n="tabMentors">Mentors</span> <span id="people-tab-mentors-count">[0]</span>
+        </button>
+        <button type="button" class="people-tab-btn" data-people-tab="unassigned">
+          <span data-i18n="tabUnassigned">Unassigned</span> <span id="people-tab-unassigned-count">[0]</span>
+        </button>
+      </div>
+
+      <div class="people-preview-row">
+        <div class="avatar-stack-preview">
+          <div class="avatar-stack-group" id="people-avatar-stack">
+            <span class="avatar-stack-circle counter">0</span>
+          </div>
+          <div class="people-preview-text">
+            <strong id="people-preview-headline">0 international students</strong>
+            <span id="people-preview-sub">0% average onboarding completion</span>
+          </div>
+        </div>
+
+        <button type="button" class="btn-mentee-details" id="btn-toggle-detailed-roster" style="font-size: 13.5px; font-weight: 700;">
+          <span data-i18n="manageStudentsLink">Hide / Show table ↕</span>
+        </button>
+      </div>
+
+      <!-- Detailed Roster Table (Visible by default so adding/managing works immediately) -->
+      <div id="detailed-roster-drawer" style="display: block; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+        <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
+          <input type="text" id="admin-search-students" class="mentee-search-input" placeholder="Search roster by ID, name, or mentor..." style="flex: 2; min-width: 220px;" />
+          <button type="button" class="modal-btn danger" id="btn-delete-selected-students" disabled>
+            <span id="label-delete-selected-students" data-i18n="btnDeleteSelectedStudents">🗑️ Delete Selected (0)</span>
+          </button>
+        </div>
+
+        <div class="arc-table-container" style="max-height: 440px; overflow-y: auto;">
+          <div id="roster-students-list">
+            <div style="padding: 24px; text-align: center; color: #94a3b8;">0 records in roster. Click "+ Add person" or "Import CSV" to add students or mentors.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Combined from Previous Plan: 1. Mentor Monthly Reports Management Box -->
+    <div class="admin-arc-reviews-box" id="admin-reports-box" style="margin-bottom: 24px;">
+      <div class="arc-reviews-header">
+        <div class="arc-reviews-title-wrap">
+          <h3>📑 Mentor Monthly Reports</h3>
+          <p>Review monthly mentorship logs and mandatory PDF attachments submitted by mentors</p>
+        </div>
+        <span class="arc-pending-badge-pill" id="admin-reports-count-badge">0 reports</span>
+      </div>
+      <div id="admin-monthly-reports-list" style="padding: 18px 24px;">
+        <div style="text-align: center; padding: 20px; color: #94a3b8; font-size: 13.5px;">0 mentor monthly reports submitted yet.</div>
+      </div>
+    </div>
+
+    <!-- Combined from Previous Plan: 2. Campus Announcements & Notices Broadcast Box -->
+    <div class="admin-arc-reviews-box" id="admin-announcements-box">
+      <div class="arc-reviews-header">
+        <div class="arc-reviews-title-wrap">
+          <h3>📢 Campus Announcements & Broadcast Notices</h3>
+          <p>Post official updates, orientation schedules, or urgent ARC reminders to all students and mentors</p>
+        </div>
+      </div>
+      <div style="padding: 20px 24px;">
+        <form id="admin-announcement-form" style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <input type="text" id="announcement-title" class="auth-input" placeholder="Announcement Title (e.g., Spring Campus Orientation / ARC Deadline)" required />
+          <select id="announcement-category" class="auth-input">
+            <option value="General">📌 General Notice</option>
+            <option value="Urgent">🚨 Urgent Alert</option>
+            <option value="Immigration">🪪 Immigration / ARC</option>
           </select>
-        </div>
-        <div class="roster-table-header student-cols">
-          <span>Student ID</span>
-          <span>Name</span>
-          <span>Assigned Mentor</span>
-          <span>Actions</span>
-        </div>
-        <div id="roster-students-list" class="roster-table-body"></div>
-      </div>
-
-      <!-- 3. MENTOR MONTHLY REPORTS CONTAINER -->
-      <div class="roster-box" id="admin-reports-box">
-        <div class="roster-box-header">
-          <div class="roster-box-title">
-            <span class="role-icon">📑</span>
-            <h3 data-i18n="monthlyReportsTitle">Mentor Monthly Reports</h3>
+          <textarea id="announcement-body" class="auth-input" rows="2" placeholder="Write the announcement details for students and mentors..." required style="grid-column: 1 / -1; resize: vertical;"></textarea>
+          <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end;">
+            <button type="submit" class="btn-primary-action" id="btn-post-announcement">📢 Post Announcement</button>
           </div>
-          <span class="roster-count-badge" id="admin-reports-count">0 reports</span>
+        </form>
+        <div id="admin-announcements-list" style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="text-align: center; padding: 14px; color: #94a3b8; font-size: 13px;">0 active announcements.</div>
         </div>
-        <div class="roster-table-header reports-cols">
-          <span>Mentor</span>
-          <span>Month</span>
-          <span>Sessions</span>
-          <span>Submitted</span>
-          <span>Status</span>
-          <span>Actions</span>
-        </div>
-        <div id="roster-reports-list" class="roster-table-body"></div>
       </div>
     </div>
   </div>
 
   <!-- ============================================================
-       MODAL 1: MATCHED VS UNMATCHED STUDENTS (CLICK STAT CARD)
+       MODALS: CHAT, DOCUMENT REVIEW, REPORT, ARC GUIDE, ROSTER
   ============================================================ -->
-  <div id="match-status-modal" class="modal-overlay" style="display: none;">
-    <div class="modal-card wide-modal">
-      <div class="modal-header">
-        <h3 data-i18n="matchedModalTitle">Mentor Matching Status</h3>
-        <button type="button" class="modal-close-btn" id="match-modal-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="modal-filter-row">
-          <button type="button" class="filter-chip active" data-match-filter="all" id="filter-chip-all">All</button>
-          <button type="button" class="filter-chip" data-match-filter="unmatched" id="filter-chip-unmatched">Unmatched</button>
-          <button type="button" class="filter-chip" data-match-filter="matched" id="filter-chip-matched">Matched</button>
-        </div>
-        <div id="matched-students-container" class="roster-table-body" style="max-height: 380px; margin-top: 12px;"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="modal-btn" id="match-modal-close-btn" data-i18n="closeBtn">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       MODAL 2: STUDENTS WHO HAVEN'T APPLIED FOR ARC YET
-  ============================================================ -->
-  <div id="arc-pending-modal" class="modal-overlay" style="display: none;">
-    <div class="modal-card wide-modal">
-      <div class="modal-header">
-        <h3 data-i18n="arcPendingModalTitle">Students Who Haven't Applied for ARC</h3>
-        <button type="button" class="modal-close-btn" id="arc-modal-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p class="hint-text" style="margin-top: 0; margin-bottom: 12px;" data-i18n="arcPendingNotice">
-          These students have not submitted or completed their ARC application yet. Please coordinate with their mentors.
-        </p>
-        <div class="roster-table-header arc-cols">
-          <span>Student ID</span>
-          <span>Name</span>
-          <span>Assigned Mentor</span>
-          <span>Action</span>
-        </div>
-        <div id="arc-pending-list" class="roster-table-body" style="max-height: 360px;"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="modal-btn" id="arc-modal-close-btn" data-i18n="closeBtn">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ============================================================
-       MODAL 3: SUBMIT MONTHLY REPORT (MENTOR) - WITH 2+ PDFS REQUIRED
-  ============================================================ -->
-  <div id="mentor-report-modal" class="modal-overlay" style="display: none;">
+  <!-- 1. LIVE CHAT MODAL -->
+  <div id="chat-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 data-i18n="reportModalTitle">Submit Monthly Mentorship Report</h3>
-        <button type="button" class="modal-close-btn" id="mentor-report-close">&times;</button>
+        <div>
+          <h3 id="chat-modal-recipient" style="margin: 0; font-size: 16px; font-weight: 800;">Chat</h3>
+          <span id="chat-modal-role" style="font-size: 12px; color: #64748b;">Direct Message</span>
+        </div>
+        <button type="button" class="modal-close-btn" id="chat-modal-close">&times;</button>
       </div>
-      <form id="mentor-report-form">
-        <div class="modal-body">
-          <label class="field-label" data-i18n="reportMonthLabel">Reporting Month</label>
-          <input type="month" id="report-month-input" required class="modal-input" style="margin-bottom: 12px;" />
+      <div class="chat-window">
+        <div class="chat-messages-container" id="chat-messages-list"></div>
+        <form id="chat-input-form" class="chat-input-bar">
+          <input type="text" id="chat-text-input" class="chat-text-input" placeholder="Type a message..." autocomplete="off" />
+          <button type="submit" class="btn-primary-action" style="padding: 8px 16px;">Send</button>
+        </form>
+      </div>
+    </div>
+  </div>
 
-          <label class="field-label" data-i18n="reportMeetingsLabel">Number of Mentoring Sessions</label>
-          <input type="number" id="report-meetings-input" min="0" max="100" placeholder="e.g. 4" required class="modal-input" style="margin-bottom: 12px;" />
+  <!-- 2. DOCUMENT REVIEW / PREVIEW MODAL -->
+  <div id="doc-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="doc-modal-title">Document Proof</h3>
+        <button type="button" class="modal-close-btn" id="doc-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div>
+            <strong id="doc-modal-student" style="font-size: 14px; color: #0f172a;">Student</strong>
+            <p id="doc-modal-task" style="margin: 2px 0 0; font-size: 12.5px; color: #64748b;">Task</p>
+          </div>
+          <span id="doc-modal-status-badge" class="status-pill-badge pending">Pending</span>
+        </div>
 
-          <label class="field-label" data-i18n="reportSummaryLabel">Activity Summary & Progress</label>
-          <textarea id="report-summary-input" rows="3" placeholder="Briefly describe what support was provided to mentees (ARC guidance, campus tour, phone plan, etc.)..." required class="modal-input" style="margin-bottom: 12px; resize: vertical;"></textarea>
+        <div id="doc-preview-container" style="text-align: center; margin: 16px 0; max-height: 320px; overflow-y: auto;"></div>
 
-          <label class="field-label" data-i18n="reportConcernsLabel">Student Issues / Help Needed from Admin</label>
-          <textarea id="report-concerns-input" rows="2" placeholder="Any issues, language barriers, or student requests that require International Office intervention..." class="modal-input" style="margin-bottom: 14px; resize: vertical;"></textarea>
+        <div id="doc-modal-note-row" style="display: none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 10px; margin-top: 10px;">
+          <strong style="font-size: 12px; color: #b91c1c;">Feedback / Note:</strong>
+          <p id="doc-modal-feedback-text" style="margin: 4px 0 0; font-size: 12px; color: #7f1d1d;"></p>
+        </div>
 
-          <!-- REQUIRED PDF DOCUMENTS SECTION (AT LEAST 2 PDFS) -->
-          <div class="pdf-upload-section">
-            <p class="field-label" style="font-weight: 600; color: #111; margin-bottom: 8px;">
-              📎 Required Monthly Report Files (At least 2 PDF files required):
-            </p>
-            <div class="pdf-input-card">
-              <label class="field-sublabel" data-i18n="pdf1Label">1. Monthly Activity Log (PDF) *</label>
-              <input type="file" id="report-pdf-1" accept="application/pdf" required class="modal-file-input" />
+        <div id="doc-reviewer-feedback-section" style="display: none; margin-top: 14px;">
+          <label style="display: block; font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 4px;">Review Note / Rejection Reason:</label>
+          <input type="text" id="doc-reviewer-note-input" class="auth-input" placeholder="e.g. Please provide a clearer stamp copy" />
+        </div>
+      </div>
+      <div class="modal-footer" id="doc-modal-actions">
+        <button type="button" class="modal-btn" id="doc-modal-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. EXPANDABLE INTERACTIVE ARC GUIDE MODAL -->
+  <div id="arc-guide-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card wide-modal">
+      <div class="modal-header">
+        <h3 data-i18n="upNextArcTitle">Apply for your ARC - Guide & Requirements</h3>
+        <button type="button" class="modal-close-btn" id="arc-guide-modal-close">&times;</button>
+      </div>
+      <div class="modal-body" style="font-size: 13.5px; line-height: 1.6; max-height: 70vh; overflow-y: auto;">
+        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+          <h4 style="margin: 0 0 4px; font-size: 14px; color: #b45309;" data-i18n="arcGuideTitle">MANDATORY IMMIGRATION REQUIREMENTS (2026)</h4>
+          <p style="margin: 0; font-size: 12px; color: #92400e;" data-i18n="arcGuideSub">Must be completed within 90 days of arrival in South Korea</p>
+        </div>
+
+        <h4 style="margin: 16px 0 8px; font-size: 14px; color: #0f172a; font-weight: 700;">Required Documents (외국인등록증 신청 준비 서류)</h4>
+        <ol style="padding-left: 20px; margin: 0 0 16px;">
+          <li style="margin-bottom: 6px;"><strong>1. Application Form (통합신청서)</strong></li>
+          <li style="margin-bottom: 6px;"><strong>2. Passport Copy (여권 사본)</strong> & Original Passport</li>
+          <li style="margin-bottom: 6px;">
+            <strong>3. ID Photo (사진 1매)</strong>
+            <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
+              • Size: 3.5 x 4.5 cm<br />
+              • Taken within the last 6 months (6개월 이내 새로 찍은 사진)<br />
+              • White background (흰색 배경)
             </div>
-            <div class="pdf-input-card">
-              <label class="field-sublabel" data-i18n="pdf2Label">2. Session Evidence / Meeting Proof (PDF) *</label>
-              <input type="file" id="report-pdf-2" accept="application/pdf" required class="modal-file-input" />
+          </li>
+          <li style="margin-bottom: 6px;"><strong>4. Application Fee (수수료):</strong> 50,000 KRW</li>
+          <li style="margin-bottom: 6px;">
+            <strong>5. House Contract (집계약서 / 거주증명서)</strong>
+            <div style="background: #f1f5f9; padding: 8px 12px; border-radius: 6px; margin-top: 6px; font-size: 12px;">
+              <strong>Dormitory Addresses (기숙사 주소):</strong>
+              <p style="margin: 2px 0;">• On-Campus Dorm: 부산시 남구 수영로 309, 경성대학교 제1누리생활관</p>
+              <p style="margin: 2px 0;">• Off-Campus Dorm: 부산 남구 용소로 7번길 63-3</p>
             </div>
-            <div class="pdf-input-card optional">
-              <label class="field-sublabel" data-i18n="pdf3Label">3. Additional Attachment (Optional PDF)</label>
-              <input type="file" id="report-pdf-3" accept="application/pdf" class="modal-file-input" />
+          </li>
+        </ol>
+
+        <h4 style="margin: 18px 0 8px; font-size: 13.5px; color: #0f172a; font-weight: 700;">Special Housing Scenarios (거주 형태별 추가 서류)</h4>
+        
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; background: #fafafa;">
+          <strong style="color: #0369a1; font-size: 13px;">👥 If you live with a friend (친구와 같이 살면):</strong>
+          <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12.5px; color: #334155;">
+            <li>House contract (집계약서)</li>
+            <li>Copy of friend's ARC / passport (친구의 신분증 사본)</li>
+            <li>Fill the Confirmation of Residence (거주숙소제공 확인서)</li>
+          </ul>
+        </div>
+
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: #fafafa;">
+          <strong style="color: #b45309; font-size: 13px;">🏢 If you live in Gosiwon / Airbnb (고시원 / 에어비앤비에 살면):</strong>
+          <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12.5px; color: #334155;">
+            <li>House contract (집계약서)</li>
+            <li>Photocopy of Owner's ID card (집주인의 신분증 사본)</li>
+            <li>Fill the Confirmation of Residence (거주숙소제공 확인서)</li>
+            <li>Owner's Business License (사업자등록증 사본)</li>
+            <li>The most recent proof of payment (최근 월세/결제 영수증)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-primary-action" id="arc-guide-modal-ok-btn">Understood</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. SUBMIT MONTHLY REPORT MODAL (MENTOR) - COMBINED FROM PREVIOUS PLAN -->
+  <div id="monthly-report-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card wide-modal">
+      <div class="modal-header">
+        <h3 data-i18n="submitMonthlyReportBtn">📑 Submit Mentor Monthly Report</h3>
+        <button type="button" class="modal-close-btn" id="monthly-report-modal-close">&times;</button>
+      </div>
+      <form id="monthly-report-form">
+        <div class="modal-body" style="max-height: 72vh; overflow-y: auto;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="auth-input-group">
+              <label class="auth-input-label">Reporting Month</label>
+              <input type="month" id="report-month-input" class="auth-input" value="2026-10" required />
+            </div>
+            <div class="auth-input-group">
+              <label class="auth-input-label">Counseling Sessions Held</label>
+              <input type="number" id="report-sessions-input" class="auth-input" min="1" max="50" value="4" required />
+            </div>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label">Report Title</label>
+            <input type="text" id="report-title-input" class="auth-input" placeholder="e.g. October 2026 Mentorship Activity Report" required />
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label">Activities Summary & Progress</label>
+            <textarea id="report-notes-input" class="auth-input" rows="3" placeholder="Summary of meetings, onboarding assistance, and settlement progress..." required style="resize: vertical;"></textarea>
+          </div>
+
+          <div class="auth-input-group">
+            <label class="auth-input-label">Student Concerns / Special Notes (Optional)</label>
+            <textarea id="report-concerns-input" class="auth-input" rows="2" placeholder="Any academic, housing, or visa difficulties reported by mentees..." style="resize: vertical;"></textarea>
+          </div>
+
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 8px;">
+            <strong style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 4px;">📎 Mandatory PDF Attachments (Minimum 2 PDFs Required)</strong>
+            <p style="font-size: 11.5px; color: #64748b; margin: 0 0 10px;">Upload at least 2 PDF files (e.g., Signed Mentoring Log PDF + Meeting Proof PDF).</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div>
+                <label style="font-size: 11.5px; font-weight: 600; color: #334155;">PDF Document 1 (Required) *</label>
+                <input type="file" id="report-pdf-1" accept="application/pdf,.pdf" class="auth-input" style="font-size: 12px; padding: 6px;" />
+              </div>
+              <div>
+                <label style="font-size: 11.5px; font-weight: 600; color: #334155;">PDF Document 2 (Required) *</label>
+                <input type="file" id="report-pdf-2" accept="application/pdf,.pdf" class="auth-input" style="font-size: 12px; padding: 6px;" />
+              </div>
+            </div>
+            <div style="margin-top: 8px;">
+              <label style="font-size: 11.5px; font-weight: 600; color: #64748b;">Or select multiple PDFs at once:</label>
+              <input type="file" id="report-files-input" accept="application/pdf,.pdf" multiple class="auth-input" style="font-size: 12px; padding: 6px;" />
             </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="submit" class="modal-btn primary" data-i18n="submitReportAction">Submit Report</button>
-          <button type="button" class="modal-btn" id="mentor-report-cancel-btn" data-i18n="closeBtn">Close</button>
+          <button type="submit" class="btn-primary-action" id="mentor-report-submit-btn">📋 Submit to International Office</button>
+          <button type="button" class="modal-btn" id="monthly-report-cancel-btn">Cancel</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- ============================================================
-       MODAL 4: VIEW MONTHLY REPORT DETAIL & SAVE/DELETE (ADMIN)
-  ============================================================ -->
+  <!-- 5. ADMIN REPORT DETAIL & REVIEW MODAL (FROM PREVIOUS PLAN) -->
   <div id="report-detail-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card wide-modal">
       <div class="modal-header">
-        <h3 id="report-detail-header-title">Mentorship Report Details</h3>
+        <h3 id="report-detail-title">📑 Mentor Monthly Report Details</h3>
         <button type="button" class="modal-close-btn" id="report-detail-close">&times;</button>
       </div>
-      <div class="modal-body">
-        <div class="doc-meta-info">
-          <p><strong>Mentor:</strong> <span id="report-detail-mentor"></span></p>
-          <p><strong>Month:</strong> <span id="report-detail-month"></span></p>
-          <p><strong>Sessions / Meetings:</strong> <span id="report-detail-sessions"></span></p>
-          <p><strong>Status:</strong> <span id="report-detail-status"></span></p>
-        </div>
-        <div style="margin-bottom: 14px;">
-          <h4 style="margin: 0 0 6px; font-size: 13px; color: #333;">Activity Summary:</h4>
-          <p id="report-detail-summary" style="background: #f9fbfd; padding: 10px 12px; border-radius: 6px; border: 1px solid #e1e8ed; font-size: 13px; line-height: 1.4; margin: 0; white-space: pre-wrap;"></p>
-        </div>
-        <div style="margin-bottom: 14px;">
-          <h4 style="margin: 0 0 6px; font-size: 13px; color: #333;">Student Issues / Help Needed:</h4>
-          <p id="report-detail-concerns" style="background: #fff8e1; padding: 10px 12px; border-radius: 6px; border: 1px solid #ffe082; font-size: 13px; line-height: 1.4; margin: 0; white-space: pre-wrap;"></p>
-        </div>
-        <!-- ATTACHED PDF REPORTS LIST -->
-        <div id="report-detail-pdfs-section" style="margin-bottom: 16px;">
-          <h4 style="margin: 0 0 8px; font-size: 13px; color: #333;" data-i18n="attachedPdfs">Attached PDF Reports:</h4>
-          <div id="report-detail-pdfs-list" class="report-pdf-list"></div>
-        </div>
-        <!-- ADMIN REMARKS & FEEDBACK -->
-        <div>
-          <h4 style="margin: 0 0 6px; font-size: 13px; color: #333;" data-i18n="adminRemarksLabel">International Office Remarks & Review Notes:</h4>
-          <textarea id="report-admin-remarks" rows="2" class="modal-input" placeholder="Enter administrative notes, scholarship approval remarks, or follow-up notes..." style="resize: vertical;"></textarea>
-        </div>
-      </div>
-      <div class="modal-footer" id="report-detail-actions">
-        <!-- Buttons injected dynamically -->
+      <div class="modal-body" id="report-detail-body" style="max-height: 70vh; overflow-y: auto;"></div>
+      <div class="modal-footer" id="report-detail-footer">
+        <button type="button" class="modal-btn" id="report-detail-close-btn">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- ============================================================
-       DOCUMENT VERIFICATION MODAL
-  ============================================================ -->
-  <div id="doc-modal" class="modal-overlay" style="display: none;">
+  <!-- 6. QUICK ADD PERSON MODAL (ADMIN) -->
+  <div id="add-person-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 id="doc-modal-title">Document Verification</h3>
-        <button type="button" class="modal-close-btn" id="doc-modal-close">&times;</button>
+        <h3 data-i18n="btnAddPerson">Add Person to Roster</h3>
+        <button type="button" class="modal-close-btn" id="add-person-modal-close">&times;</button>
       </div>
-      <div class="modal-body">
-        <div class="doc-meta-info">
-          <p><strong><span id="doc-modal-student-label">Student:</span></strong> <span id="doc-modal-student"></span></p>
-          <p><strong><span id="doc-modal-task-label">Task:</span></strong> <span id="doc-modal-task"></span></p>
-          <p><strong>Status:</strong> <span id="doc-modal-status-badge"></span></p>
-          <p id="doc-modal-note-row" style="display: none;"><strong>Feedback:</strong> <span id="doc-modal-feedback-text" style="color: #c62828;"></span></p>
+      <form id="add-person-form">
+        <div class="modal-body">
+          <div class="auth-input-group">
+            <label class="auth-input-label">Role</label>
+            <select id="roster-role" class="auth-input">
+              <option value="student">Student</option>
+              <option value="mentor">Mentor</option>
+            </select>
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-input-label">User ID</label>
+            <input type="text" id="roster-id" class="auth-input" placeholder="e.g. a2024691204 or m01" required />
+            <span id="roster-password-preview" style="display: block; font-size: 11.5px; color: #3b50b2; margin-top: 4px; font-weight: 600;">Initial login password will be: (ID without first letter) + @ks</span>
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-input-label">Full Name</label>
+            <input type="text" id="roster-name" class="auth-input" placeholder="e.g. Amr Hassan" required />
+          </div>
+          <div class="auth-input-group" id="roster-phone-group" style="display: none;">
+            <label class="auth-input-label">Phone Number (Mentor)</label>
+            <input type="tel" id="roster-phone" class="auth-input" placeholder="010-1234-5678" />
+          </div>
+          <div class="auth-input-group" id="roster-mentor-group">
+            <label class="auth-input-label">Assign Mentor (Optional)</label>
+            <select id="roster-mentor-id" class="auth-input">
+              <option value="">Choose mentor...</option>
+            </select>
+          </div>
         </div>
-        <div id="doc-preview-container" class="doc-preview-area">
-          <p class="doc-preview-placeholder">No preview available</p>
+        <div class="modal-footer">
+          <button type="submit" class="btn-primary-action" id="roster-add-btn">Add Person</button>
+          <button type="button" class="modal-btn" id="add-person-cancel-btn">Cancel</button>
         </div>
-        <div id="doc-feedback-section" style="margin-top: 14px; display: none;">
-          <input type="text" id="doc-reject-note" placeholder="Feedback note (e.g. Needs clearer stamp/photo)..." class="modal-input" />
-        </div>
-      </div>
-      <div class="modal-footer" id="doc-modal-actions">
-        <!-- Buttons injected dynamically -->
-      </div>
+      </form>
     </div>
   </div>
 
-  <!-- ============================================================
-       IN-APP REAL-TIME CHAT WIDGET
-  ============================================================ -->
-  <div id="chat-modal" class="chat-widget" style="display: none;">
-    <div class="chat-header">
-      <div class="chat-header-info">
-        <div class="chat-avatar" id="chat-header-avatar">💬</div>
-        <div>
-          <h4 id="chat-recipient-name">Mentor</h4>
-          <span id="chat-recipient-role" class="chat-role-badge">Online</span>
-        </div>
-      </div>
-      <button type="button" class="chat-close-btn" id="chat-close-btn" title="Close">&times;</button>
-    </div>
-    <div class="chat-messages" id="chat-messages-container">
-      <p class="chat-empty-hint">Loading conversation...</p>
-    </div>
-    <form id="chat-form" class="chat-input-bar">
-      <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off" />
-      <button type="submit" id="chat-send-btn" title="Send">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"></line>
-          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-        </svg>
-      </button>
-    </form>
-  </div>
-
-  <script type="module" src="firebase-init.js"></script>
-  <script type="module" src="i18n.js"></script>
+  <!-- Scripts -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
