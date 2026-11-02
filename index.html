@@ -265,6 +265,20 @@
       </div>
     </div>
 
+    <!-- Personalized Student-Only Urgent ARC Countdown Banner (Hidden for Mentors / Completed ARC) -->
+    <div id="student-arc-urgent-banner" class="student-arc-urgent-banner" style="display: none;">
+      <div class="urgent-banner-left">
+        <span class="urgent-banner-icon">🚨</span>
+        <div class="urgent-banner-content">
+          <strong id="student-arc-urgent-text">You have 0 days remaining to submit your Alien Registration Card (ARC) application.</strong>
+          <span id="student-arc-urgent-sub">Official deadline set by the International Office</span>
+        </div>
+      </div>
+      <button type="button" class="btn-urgent-banner-action" id="btn-urgent-upload-arc">
+        ⇪ Upload ARC Proof →
+      </button>
+    </div>
+
     <!-- Blue Progress Hero Banner with Circular Radial Gauge Chart -->
     <div class="student-progress-banner">
       <div class="banner-left">
@@ -325,14 +339,15 @@
             </div>
           </li>
 
-          <!-- 2. ARC (Priority Accent) -->
+          <!-- 2. ARC (Priority Accent + Dynamic Admin Deadline Display) -->
           <li class="task-item-row priority-task" data-id="arc">
             <div class="task-left-info">
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
-                <div class="task-title-row">
+                <div class="task-title-row" style="flex-wrap: wrap; gap: 6px;">
                   <span class="task-main-label task-title" data-task-id="arc">Apply for ARC card</span>
                   <span class="task-badge-priority" data-i18n="badgePriority">🕒 Priority</span>
+                  <span class="arc-deadline-pill" id="student-arc-deadline-badge">📅 Due: Not set</span>
                 </div>
                 <span class="task-sub-hint">Required for all international students (reviewed directly by International Office)</span>
                 <button type="button" class="checklist-guide-link-btn" id="checklist-arc-guide-btn" style="background: none; border: none; padding: 2px 0 0 0; font-size: 12px; font-weight: 600; color: var(--primary); cursor: pointer; text-align: left; display: inline-flex; align-items: center; gap: 4px;">
@@ -543,6 +558,9 @@
       </div>
     </div>
 
+    <!-- Targeted Monthly Report Warning Banner (Strictly for unsubmitted mentors targeted by Admin) -->
+    <div id="mentor-report-warning-banner" class="mentor-report-warning-banner" style="display: none;"></div>
+
     <!-- Mentor Campus Announcements Banner (if any) -->
     <div id="mentor-announcements-banner" style="display: none; margin-bottom: 20px;"></div>
 
@@ -561,14 +579,23 @@
       </div>
     </div>
 
-    <!-- Mentor Submitted Monthly Reports History -->
+    <!-- Mentor Submitted Monthly Reports History & 6-Session Cycle Tracker -->
     <div class="recent-activity-section" id="mentor-reports-history-section" style="margin-bottom: 24px;">
-      <div class="activity-header">
+      <div class="activity-header" style="flex-wrap: wrap; gap: 12px;">
         <div>
           <h4>My Submitted Monthly Reports</h4>
-          <p>Reports and PDF attachments sent to the International Office</p>
+          <p>3-Month Cycle Requirement: 6 sessions total (2 session PDFs per month)</p>
         </div>
-        <button type="button" class="btn-secondary-action" id="mentor-open-report-btn-2" style="padding: 6px 12px; font-size: 12.5px;">+ Submit Report</button>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <span class="mentor-cycle-pill" id="mentor-cycle-progress-badge">0 / 6 Sessions Submitted</span>
+          <button type="button" class="btn-secondary-action" id="mentor-open-report-btn-2" style="padding: 6px 12px; font-size: 12.5px;">+ Submit Report</button>
+        </div>
+      </div>
+      <div class="mentor-cycle-bar-wrap">
+        <div class="mentor-cycle-bar-track">
+          <div class="mentor-cycle-bar-fill" id="mentor-cycle-progress-fill" style="width: 0%;"></div>
+        </div>
+        <span class="mentor-cycle-bar-hint" id="mentor-cycle-progress-hint">0 of 6 required counseling session PDFs uploaded across 3-month cycle</span>
       </div>
       <div id="mentor-own-reports-list" class="activity-feed-list">
         <div style="padding: 16px; text-align: center; color: #94a3b8; font-size: 13px;">0 reports submitted yet.</div>
@@ -692,11 +719,14 @@
         </table>
       </div>
 
-      <div class="arc-reviews-footer">
+      <div class="arc-reviews-footer" style="flex-wrap: wrap; gap: 12px;">
         <span id="admin-arc-table-count">Showing 0 submissions</span>
-        <button type="button" id="btn-broadcast-arc-warning" style="background: none; border: none; color: #dc2626; font-size: 12.5px; font-weight: 600; cursor: pointer;">
-          🚨 Send Warning to Pending Students
-        </button>
+        <div class="arc-warning-action-group">
+          <span id="arc-warning-status-badge" class="warning-dispatch-badge">No warning dispatched yet</span>
+          <button type="button" id="btn-broadcast-arc-warning" class="btn-urgent-warning">
+            <span class="btn-warning-label">🚨 Send Warning to Pending Students</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -736,7 +766,7 @@
               <span class="attention-dot red"></span>
               <div class="attention-text-col">
                 <strong><span id="attention-arc-count">0 students</span> haven't applied for ARC</strong>
-                <span data-i18n="attentionArcDeadline">Within 90 days of arrival</span>
+                <span id="admin-attention-arc-deadline" data-i18n="attentionArcDeadline">Within 90 days of arrival</span>
               </div>
             </div>
             <span class="attention-arrow">→</span>
@@ -824,43 +854,110 @@
       </div>
     </div>
 
-    <!-- Combined from Previous Plan: 1. Mentor Monthly Reports Management Box -->
+    <!-- 1. Mentor Monthly Reports — Clean 3-Level Hierarchical Drill-Down (Month -> Mentor -> Session PDFs) -->
     <div class="admin-arc-reviews-box" id="admin-reports-box" style="margin-bottom: 24px;">
-      <div class="arc-reviews-header">
+      <div class="arc-reviews-header" style="flex-wrap: wrap; gap: 12px;">
         <div class="arc-reviews-title-wrap">
           <h3>📑 Mentor Monthly Reports</h3>
-          <p>Review monthly mentorship logs and mandatory PDF attachments submitted by mentors</p>
+          <p>Select a month folder to view assigned mentors, track monthly quota (0/2, 1/2, or 2/2 Files Submitted), and inspect session PDFs</p>
         </div>
-        <span class="arc-pending-badge-pill" id="admin-reports-count-badge">0 reports</span>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <span class="arc-pending-badge-pill" id="admin-reports-count-badge">0 files · 0 sessions</span>
+          <button type="button" class="btn-secondary-action" id="btn-export-mentor-pdfs" style="padding: 6px 12px; font-size: 12.5px;">
+            ⤓ Export PDFs
+          </button>
+        </div>
       </div>
-      <div id="admin-monthly-reports-list" style="padding: 18px 24px;">
-        <div style="text-align: center; padding: 20px; color: #94a3b8; font-size: 13.5px;">0 mentor monthly reports submitted yet.</div>
+
+      <!-- Hierarchical Navigation Breadcrumb / Month Switcher Bar -->
+      <div id="admin-reports-breadcrumb-bar" class="reports-drilldown-bar"></div>
+
+      <!-- Level 1 (Month Folder Cards) OR Level 2 (Selected Month Mentor Directory Table) -->
+      <div id="admin-monthly-reports-list" style="padding: 6px 0 4px;">
+        <div style="text-align: center; padding: 24px; color: #94a3b8; font-size: 13.5px;">Loading monthly report folders...</div>
       </div>
     </div>
 
     <!-- Combined from Previous Plan: 2. Campus Announcements & Notices Broadcast Box -->
-    <div class="admin-arc-reviews-box" id="admin-announcements-box">
+    <div class="admin-arc-reviews-box" id="admin-announcements-box" style="margin-bottom: 24px;">
       <div class="arc-reviews-header">
         <div class="arc-reviews-title-wrap">
           <h3>📢 Campus Announcements & Broadcast Notices</h3>
-          <p>Post official updates, orientation schedules, or urgent ARC reminders to all students and mentors</p>
+          <p>Post official updates and orientation schedules (Immigration/ARC notices are shown strictly to Students)</p>
         </div>
       </div>
-      <div style="padding: 20px 24px;">
+      <div style="padding: 12px 0 4px;">
         <form id="admin-announcement-form" style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 16px;">
-          <input type="text" id="announcement-title" class="auth-input" placeholder="Announcement Title (e.g., Spring Campus Orientation / ARC Deadline)" required />
+          <input type="text" id="announcement-title" class="auth-input" placeholder="Announcement Title (e.g., Spring Campus Orientation)" required />
           <select id="announcement-category" class="auth-input">
             <option value="General">📌 General Notice</option>
             <option value="Urgent">🚨 Urgent Alert</option>
-            <option value="Immigration">🪪 Immigration / ARC</option>
+            <option value="Immigration">🪪 Immigration / ARC (Students Only)</option>
           </select>
-          <textarea id="announcement-body" class="auth-input" rows="2" placeholder="Write the announcement details for students and mentors..." required style="grid-column: 1 / -1; resize: vertical;"></textarea>
+          <textarea id="announcement-body" class="auth-input" rows="2" placeholder="Write the announcement details..." required style="grid-column: 1 / -1; resize: vertical;"></textarea>
           <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end;">
             <button type="submit" class="btn-primary-action" id="btn-post-announcement">📢 Post Announcement</button>
           </div>
         </form>
         <div id="admin-announcements-list" style="display: flex; flex-direction: column; gap: 10px;">
           <div style="text-align: center; padding: 14px; color: #94a3b8; font-size: 13px;">0 active announcements.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Admin Dynamic Configuration & Deadline Settings Panel -->
+    <div class="admin-arc-reviews-box" id="admin-settings-box">
+      <div class="arc-reviews-header">
+        <div class="arc-reviews-title-wrap">
+          <h3>⚙️ Portal &amp; ARC Deadline Settings</h3>
+          <p>Configure the official Student ARC submission deadline and customize urgent banner copy</p>
+        </div>
+        <span class="status-pill-badge approved" id="admin-settings-live-badge">● Live Sync Enabled</span>
+      </div>
+
+      <div class="admin-settings-grid">
+        <!-- ARC Submission Deadline Picker & Custom Urgent Message -->
+        <div class="settings-sub-card">
+          <h4>🪪 Student ARC Submission Deadline</h4>
+          <p>Updates the Student ARC checklist due date and personalized urgent banner message immediately.</p>
+
+          <div class="auth-input-group" style="margin-top: 12px;">
+            <label class="auth-input-label" for="admin-arc-deadline-input">Submission Due Date &amp; Time</label>
+            <input type="datetime-local" id="admin-arc-deadline-input" class="auth-input" />
+          </div>
+
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;">
+            <button type="button" class="btn-table-action" data-deadline-preset="7" style="padding: 4px 10px; font-size: 11.5px;">+7 Days</button>
+            <button type="button" class="btn-table-action" data-deadline-preset="14" style="padding: 4px 10px; font-size: 11.5px;">+14 Days</button>
+            <button type="button" class="btn-table-action" data-deadline-preset="30" style="padding: 4px 10px; font-size: 11.5px;">+30 Days</button>
+          </div>
+
+          <div class="auth-input-group" style="margin-bottom: 8px;">
+            <label class="auth-input-label" for="admin-arc-custom-message-input">Urgent Banner Custom Message</label>
+            <textarea
+              id="admin-arc-custom-message-input"
+              class="auth-input"
+              rows="2"
+              placeholder="You have {days_left} days remaining to submit your Alien Registration Card (ARC) application."
+              style="resize: vertical;"
+            ></textarea>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
+              <span style="font-size: 11px; color: #64748b;">Optional dynamic tokens: <code>{days_left}</code>, <code>{deadline}</code></span>
+              <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                <button type="button" class="btn-table-action" data-insert-arc-token="{days_left}" style="padding: 2px 8px; font-size: 11px;">+ {days_left}</button>
+                <button type="button" class="btn-table-action" data-insert-arc-token="{deadline}" style="padding: 2px 8px; font-size: 11px;">+ {deadline}</button>
+                <button type="button" class="btn-table-action" id="btn-reset-arc-message-template" style="padding: 2px 8px; font-size: 11px;">↺ Reset Copy</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="deadline-preview-callout" id="admin-arc-deadline-preview">
+            Student Banner Preview: <strong>"You have -- days remaining to submit your Alien Registration Card (ARC) application."</strong>
+          </div>
+
+          <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+            <button type="button" class="btn-primary-action" id="btn-save-arc-deadline">💾 Save ARC Deadline</button>
+          </div>
         </div>
       </div>
     </div>
@@ -987,7 +1084,7 @@
     </div>
   </div>
 
-  <!-- 4. SUBMIT MONTHLY REPORT MODAL (MENTOR) - COMBINED FROM PREVIOUS PLAN -->
+  <!-- 4. SUBMIT MONTHLY REPORT MODAL (MENTOR) - 1:1 SESSION TO PDF MAPPING -->
   <div id="monthly-report-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card wide-modal">
       <div class="modal-header">
@@ -996,14 +1093,20 @@
       </div>
       <form id="monthly-report-form">
         <div class="modal-body" style="max-height: 72vh; overflow-y: auto;">
+          <!-- Cycle Quota Status Banner -->
+          <div id="modal-mentor-cycle-info" class="modal-cycle-info-banner">
+            <strong>Cycle Progress: 0 / 6 Sessions Submitted</strong>
+            <span>Each mentor submits 6 session reports across a 3-month cycle (2 session PDFs per month).</span>
+          </div>
+
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="auth-input-group">
               <label class="auth-input-label">Reporting Month</label>
               <input type="month" id="report-month-input" class="auth-input" value="2026-10" required />
             </div>
             <div class="auth-input-group">
-              <label class="auth-input-label">Counseling Sessions Held</label>
-              <input type="number" id="report-sessions-input" class="auth-input" min="1" max="50" value="4" required />
+              <label class="auth-input-label">Sessions Registered (Auto 1:1 from PDFs)</label>
+              <input type="number" id="report-sessions-input" class="auth-input" min="0" max="2" value="0" readonly style="background: #f1f5f9; font-weight: 700; color: #0f172a; cursor: not-allowed;" />
             </div>
           </div>
 
@@ -1013,7 +1116,7 @@
           </div>
 
           <div class="auth-input-group">
-            <label class="auth-input-label">Activities Summary & Progress</label>
+            <label class="auth-input-label">Activities Summary &amp; Progress</label>
             <textarea id="report-notes-input" class="auth-input" rows="3" placeholder="Summary of meetings, onboarding assistance, and settlement progress..." required style="resize: vertical;"></textarea>
           </div>
 
@@ -1023,40 +1126,44 @@
           </div>
 
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 8px;">
-            <strong style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 4px;">📎 Mandatory PDF Attachments (Minimum 2 PDFs Required)</strong>
-            <p style="font-size: 11.5px; color: #64748b; margin: 0 0 10px;">Upload at least 2 PDF files (e.g., Signed Mentoring Log PDF + Meeting Proof PDF).</p>
+            <strong style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 4px;">📎 Required: Attach Both Session PDFs Together (2 PDFs = 2 Monthly Sessions)</strong>
+            <p style="font-size: 11.5px; color: #64748b; margin: 0 0 10px;">Both Session 1 PDF and Session 2 PDF must be uploaded together at the same time. Previously submitted months remain permanently stored.</p>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div>
-                <label style="font-size: 11.5px; font-weight: 600; color: #334155;">PDF Document 1 (Required) *</label>
-                <input type="file" id="report-pdf-1" accept="application/pdf,.pdf" class="auth-input" style="font-size: 12px; padding: 6px;" />
+                <label id="report-slot-1-label" for="report-pdf-1" style="font-size: 11.5px; font-weight: 700; color: #334155;">Session 1 PDF Document <span style="color: #dc2626;">*</span></label>
+                <div id="report-slot-1-status" style="display: none; font-size: 11.5px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px; margin-top: 4px; font-weight: 600;"></div>
+                <input type="file" id="report-pdf-1" accept="application/pdf,.pdf" required class="auth-input" style="font-size: 12px; padding: 6px; margin-top: 4px;" />
               </div>
               <div>
-                <label style="font-size: 11.5px; font-weight: 600; color: #334155;">PDF Document 2 (Required) *</label>
-                <input type="file" id="report-pdf-2" accept="application/pdf,.pdf" class="auth-input" style="font-size: 12px; padding: 6px;" />
+                <label id="report-slot-2-label" for="report-pdf-2" style="font-size: 11.5px; font-weight: 700; color: #334155;">Session 2 PDF Document <span style="color: #dc2626;">*</span></label>
+                <div id="report-slot-2-status" style="display: none; font-size: 11.5px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px; margin-top: 4px; font-weight: 600;"></div>
+                <input type="file" id="report-pdf-2" accept="application/pdf,.pdf" required class="auth-input" style="font-size: 12px; padding: 6px; margin-top: 4px;" />
               </div>
             </div>
-            <div style="margin-top: 8px;">
-              <label style="font-size: 11.5px; font-weight: 600; color: #64748b;">Or select multiple PDFs at once:</label>
-              <input type="file" id="report-files-input" accept="application/pdf,.pdf" multiple class="auth-input" style="font-size: 12px; padding: 6px;" />
+            <div id="mentor-both-pdfs-requirement-note" style="margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; background: #fff7ed; border: 1px solid #fed7aa; color: #c2410c;">
+              ⚠️ Required: Please attach both Session 1 PDF and Session 2 PDF together (0 / 2 selected) to enable the Submit button.
             </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="submit" class="btn-primary-action" id="mentor-report-submit-btn">📋 Submit to International Office</button>
+          <button type="submit" class="btn-primary-action" id="mentor-report-submit-btn" disabled>🔒 Attach Both 2 PDFs to Submit (0/2)</button>
           <button type="button" class="modal-btn" id="monthly-report-cancel-btn">Cancel</button>
         </div>
       </form>
     </div>
   </div>
 
-  <!-- 5. ADMIN REPORT DETAIL & REVIEW MODAL (FROM PREVIOUS PLAN) -->
+  <!-- 5. ADMIN LEVEL 3: MENTOR MONTHLY SESSION & PDF INSPECTOR MODAL -->
   <div id="report-detail-modal" class="modal-overlay" style="display: none;">
-    <div class="modal-card wide-modal">
+    <div class="modal-card wide-modal" style="max-width: 780px;">
       <div class="modal-header">
-        <h3 id="report-detail-title">📑 Mentor Monthly Report Details</h3>
+        <div>
+          <h3 id="report-detail-title" style="margin: 0;">📑 Mentor Monthly Session Files</h3>
+          <span id="report-detail-subtitle" style="font-size: 12px; color: #64748b;">2 Session PDFs per Month · Permanent Append-Only History</span>
+        </div>
         <button type="button" class="modal-close-btn" id="report-detail-close">&times;</button>
       </div>
-      <div class="modal-body" id="report-detail-body" style="max-height: 70vh; overflow-y: auto;"></div>
+      <div class="modal-body" id="report-detail-body" style="max-height: 74vh; overflow-y: auto;"></div>
       <div class="modal-footer" id="report-detail-footer">
         <button type="button" class="modal-btn" id="report-detail-close-btn">Close</button>
       </div>
@@ -1102,6 +1209,52 @@
         <div class="modal-footer">
           <button type="submit" class="btn-primary-action" id="roster-add-btn">Add Person</button>
           <button type="button" class="modal-btn" id="add-person-cancel-btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 7. URGENT REMINDER CONFIRMATION MODAL (ADMIN FEEDBACK) -->
+  <div id="arc-warning-confirm-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 id="arc-warning-confirm-title">✅ Urgent Reminder Dispatched</h3>
+        <button type="button" class="modal-close-btn" id="arc-warning-confirm-close">&times;</button>
+      </div>
+      <div class="modal-body" style="text-align: center; padding: 26px 24px;">
+        <div style="width: 52px; height: 52px; border-radius: 50%; background: #dcfce7; color: #16a34a; font-size: 24px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px;">✓</div>
+        <p id="arc-warning-confirm-message" style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0 0 8px;">
+          Urgent reminder successfully sent to 0 pending students.
+        </p>
+        <p id="arc-warning-confirm-meta" style="font-size: 12.5px; color: #64748b; margin: 0;">
+          Students with pending ARC applications now see their personalized countdown banner. Duplicate alerts were prevented.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-primary-action" id="arc-warning-confirm-ok">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. INLINE RENAME MONTH REPORT GROUP MODAL (ADMIN) -->
+  <div id="rename-month-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 420px;">
+      <div class="modal-header">
+        <h3>✏️ Edit Month Group Name</h3>
+        <button type="button" class="modal-close-btn" id="rename-month-modal-close">&times;</button>
+      </div>
+      <form id="rename-month-form">
+        <div class="modal-body">
+          <input type="hidden" id="rename-month-key-hidden" />
+          <div class="auth-input-group">
+            <label class="auth-input-label" id="rename-month-key-display">Period: 2026-10</label>
+            <input type="text" id="rename-month-label-input" class="auth-input" placeholder="e.g. October Reports (Cycle 1)" required />
+          </div>
+          <p style="margin: 6px 0 0; font-size: 12px; color: #64748b;">Leave blank or click Reset to restore the default month name.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="modal-btn" id="rename-month-reset-btn">Reset Default</button>
+          <button type="submit" class="btn-primary-action">Save Label</button>
         </div>
       </form>
     </div>
