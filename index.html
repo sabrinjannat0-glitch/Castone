@@ -26,9 +26,9 @@
       <!-- Populated dynamically based on student, mentor, or admin -->
     </nav>
 
-    <!-- Right Controls: Language Selector, Notifications, Profile / Logout -->
+    <!-- Right Controls: Language Selector, Messenger, Urgent Alerts, Profile / Mobile Menu -->
     <div class="nav-right">
-      <div class="lang-picker-pill">
+      <div class="lang-picker-pill desktop-lang-pill">
         <span style="margin-right: 4px;">🌐</span>
         <select id="global-lang-select" aria-label="Select Language">
           <option value="en">EN</option>
@@ -37,35 +37,85 @@
       </div>
 
       <!-- Logged-in Controls (Hidden on Login Page) -->
-      <div id="nav-auth-controls" style="display: none; align-items: center; gap: 14px;">
+      <div id="nav-auth-controls" class="nav-auth-controls" style="display: none;">
+        <!-- System B: Standard In-App Messenger Icon -->
+        <button type="button" class="nav-icon-btn nav-messenger-btn" id="nav-messenger-btn" title="Messenger (Chats)" aria-label="Open Messenger">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          </svg>
+          <span class="nav-badge-counter messenger-badge" id="nav-messenger-unread-badge" style="display: none;">0</span>
+        </button>
+
+        <!-- System A: High-Priority Urgent Institutional Alerts Bell -->
         <div class="nav-bell-wrapper" style="position: relative;">
-          <button type="button" class="nav-bell-btn" id="nav-bell-btn" title="Notifications">
+          <button type="button" class="nav-bell-btn" id="nav-bell-btn" title="Urgent System Alerts" aria-label="Urgent System Alerts">
             🔔
             <span class="nav-bell-dot" id="nav-unread-dot" style="display: none;"></span>
           </button>
 
-          <!-- Bell Notifications Dropdown -->
+          <!-- Urgent System Alerts Dropdown -->
           <div id="nav-notifications-dropdown" class="nav-notifications-dropdown" style="display: none;">
             <div class="notif-dropdown-header">
-              <strong>Notifications</strong>
-              <button type="button" id="btn-mark-all-read" class="notif-mark-read-btn">Mark all read</button>
+              <strong>🚨 Urgent System Alerts</strong>
+              <button type="button" id="btn-mark-all-read" class="notif-mark-read-btn">Acknowledge all</button>
+            </div>
+            <div id="browser-push-permission-bar" class="browser-push-permission-bar" style="display: none;">
+              <span>Enable OS / Mobile Push Alerts for critical deadlines</span>
+              <button type="button" id="btn-enable-browser-push" class="btn-enable-push-sm">Enable</button>
             </div>
             <div id="nav-notifications-list" class="notif-dropdown-list">
-              <div class="notif-empty-state">No message notifications yet.</div>
+              <div class="notif-empty-state">No active urgent alerts.</div>
             </div>
           </div>
         </div>
 
-        <div class="nav-user-profile">
+        <div class="nav-user-profile desktop-user-profile">
           <div class="user-avatar-circle" id="user-avatar-initials">KSU</div>
           <div class="user-meta-text">
             <span class="user-meta-name" id="nav-user-name">User</span>
             <button type="button" class="nav-logout-btn logout-btn" data-i18n="logoutBtn">Log out</button>
           </div>
         </div>
+
+        <!-- Mobile Hamburger Menu Toggle (<= 768px) -->
+        <button type="button" class="mobile-nav-toggle-btn" id="mobile-nav-toggle-btn" aria-label="Open Navigation Menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
       </div>
     </div>
   </header>
+
+  <!-- Responsive Mobile Navigation Slide-Over Drawer -->
+  <div id="mobile-nav-backdrop" class="mobile-nav-backdrop" style="display: none;"></div>
+  <aside id="mobile-nav-drawer" class="mobile-nav-drawer" aria-label="Mobile Navigation" style="display: none;">
+    <div class="mobile-drawer-header">
+      <div class="mobile-drawer-user">
+        <div class="user-avatar-circle" id="mobile-user-avatar-initials">KSU</div>
+        <div class="mobile-drawer-user-meta">
+          <strong id="mobile-nav-user-name">User</strong>
+          <span id="mobile-nav-role-tag">Portal</span>
+        </div>
+      </div>
+      <button type="button" class="mobile-drawer-close-btn" id="mobile-nav-close-btn" aria-label="Close Navigation Menu">&times;</button>
+    </div>
+    <nav class="mobile-drawer-links" id="mobile-nav-links">
+      <!-- Dynamically populated per role -->
+    </nav>
+    <div class="mobile-drawer-footer">
+      <div class="mobile-lang-row">
+        <span>🌐 Language</span>
+        <select id="mobile-lang-select" class="mobile-lang-select" aria-label="Select Language">
+          <option value="en">English (EN)</option>
+          <option value="ko">한국어 (KO)</option>
+        </select>
+      </div>
+      <button type="button" class="btn-mobile-logout logout-btn" data-i18n="logoutBtn">Log out</button>
+    </div>
+  </aside>
 
   <!-- Real-Time In-App Toast Notification Banner Container -->
   <div id="toast-container" class="toast-container"></div>
@@ -350,9 +400,6 @@
                   <span class="arc-deadline-pill" id="student-arc-deadline-badge">📅 Due: Not set</span>
                 </div>
                 <span class="task-sub-hint">Required for all international students (reviewed directly by International Office)</span>
-                <button type="button" class="checklist-guide-link-btn" id="checklist-arc-guide-btn" style="background: none; border: none; padding: 2px 0 0 0; font-size: 12px; font-weight: 600; color: var(--primary); cursor: pointer; text-align: left; display: inline-flex; align-items: center; gap: 4px;">
-                  <span>📋</span> <span data-i18n="viewArcGuideLink">View application process & requirements →</span>
-                </button>
               </div>
             </div>
             <div class="task-right-actions">
@@ -732,24 +779,25 @@
 
     <!-- 2-Column Split: Import Roster Drag-and-Drop + Needs Attention (Screenshot 7) -->
     <div class="admin-split-widgets">
-      <!-- Left: Import Student Roster -->
-      <div class="admin-widget-card">
-        <div class="widget-icon-header">
-          <div class="widget-icon-box">⇪</div>
-        </div>
-        <h3 data-i18n="importRosterTitle">Import student roster</h3>
-        <p data-i18n="importRosterSub">Upload an Excel-compatible CSV to add or update students and mentors in bulk.</p>
-        
-        <div class="csv-drag-drop-zone" id="csv-drag-drop-zone">
-          <span class="csv-zone-icon">📄</span>
-          <span class="csv-zone-title" data-i18n="chooseCsvFile">Choose a CSV file</span>
-          <span class="csv-zone-subtitle" data-i18n="dragDropHere">or drag and drop here</span>
-          <span style="font-size: 10.5px; color: #94a3b8;" data-i18n="csvMaxMb">CSV · Supports Role,ID,Name,MentorID/Phone</span>
+      <!-- Left: Bulk Roster Import Card (Dual-Role: Students | Mentors) -->
+      <div class="admin-widget-card" id="admin-import-roster-card">
+        <div class="import-role-switcher" id="import-role-switcher" role="tablist" aria-label="Import Roster Role">
+          <button type="button" class="import-role-pill active" id="import-role-btn-students" data-import-role="students" role="tab" aria-selected="true">Students</button>
+          <button type="button" class="import-role-pill" id="import-role-btn-mentors" data-import-role="mentors" role="tab" aria-selected="false">Mentors</button>
         </div>
 
-        <a href="#template" class="csv-template-link" id="link-download-csv-template">
-          ⤓ <span data-i18n="downloadCsvTemplate">Download CSV template</span>
-        </a>
+        <h3 id="import-roster-title">Import Student Roster</h3>
+        <p id="import-roster-sub">Upload a CSV file to add or update international students in bulk.</p>
+        
+        <div class="csv-drag-drop-zone" id="csv-drag-drop-zone">
+          <span class="csv-zone-title" id="csv-zone-title" data-i18n="chooseCsvFile">Choose a CSV file</span>
+          <span class="csv-zone-subtitle" id="csv-zone-subtitle" data-i18n="dragDropHere">or drag and drop here</span>
+          <span id="csv-schema-hint" class="csv-schema-hint">student_id,name,department,mentor_id</span>
+        </div>
+
+        <button type="button" class="csv-template-link" id="link-download-csv-template">Download Student CSV Template</button>
+
+        <div id="csv-import-summary-banner" class="csv-import-summary-banner" style="display: none;"></div>
       </div>
 
       <!-- Right: Needs Attention List (All initialized to 0) -->
@@ -797,31 +845,37 @@
       </div>
     </div>
 
-    <!-- People Overview Card (Screenshot 8 - Open & Interactive with 0 defaults) -->
+    <!-- People Overview Card (Default Collapsed Accordion to Prevent 200+ Row Clutter) -->
     <div class="people-overview-card" id="admin-people-card" style="margin-bottom: 24px;">
       <div class="people-overview-header">
         <div>
           <h3 style="margin: 0 0 2px 0; font-size: 18px; font-weight: 800;" data-i18n="peopleOverviewTitle">People overview</h3>
-          <p style="margin: 0; font-size: 13px; color: #64748b;" data-i18n="peopleOverviewSub">Manage students and mentors, assign mentors, and perform bulk actions</p>
+          <p style="margin: 0; font-size: 13px; color: #64748b;" data-i18n="peopleOverviewSub">Manage students and mentors, filter by department, and auto-assign by department</p>
         </div>
         <button type="button" class="btn-primary-action" id="btn-open-add-person">
           + <span data-i18n="btnAddPerson">Add person</span>
         </button>
       </div>
 
-      <div class="people-overview-tabs">
-        <button type="button" class="people-tab-btn active" data-people-tab="students">
-          <span data-i18n="tabStudents">Students</span> <span id="people-tab-students-count">[0]</span>
+      <div class="people-overview-tabs" id="people-overview-tabs" role="tablist" aria-label="People Directory Tabs">
+        <button type="button" class="people-tab-btn active" id="people-tab-btn-students" data-people-tab="students" aria-expanded="false" aria-controls="detailed-roster-drawer">
+          <span data-i18n="tabStudents">Students</span>
+          <span id="people-tab-students-count">[0]</span>
+          <span class="people-tab-chevron" id="people-chevron-students">▼</span>
         </button>
-        <button type="button" class="people-tab-btn" data-people-tab="mentors">
-          <span data-i18n="tabMentors">Mentors</span> <span id="people-tab-mentors-count">[0]</span>
+        <button type="button" class="people-tab-btn" id="people-tab-btn-mentors" data-people-tab="mentors" aria-expanded="false" aria-controls="detailed-roster-drawer">
+          <span data-i18n="tabMentors">Mentors</span>
+          <span id="people-tab-mentors-count">[0]</span>
+          <span class="people-tab-chevron" id="people-chevron-mentors" style="display: none;"></span>
         </button>
-        <button type="button" class="people-tab-btn" data-people-tab="unassigned">
-          <span data-i18n="tabUnassigned">Unassigned</span> <span id="people-tab-unassigned-count">[0]</span>
+        <button type="button" class="people-tab-btn" id="people-tab-btn-unassigned" data-people-tab="unassigned" aria-expanded="false" aria-controls="detailed-roster-drawer">
+          <span data-i18n="tabUnassigned">Unassigned</span>
+          <span id="people-tab-unassigned-count">[0]</span>
+          <span class="people-tab-chevron" id="people-chevron-unassigned" style="display: none;"></span>
         </button>
       </div>
 
-      <div class="people-preview-row">
+      <div class="people-preview-row" id="people-accordion-summary-row">
         <div class="avatar-stack-preview">
           <div class="avatar-stack-group" id="people-avatar-stack">
             <span class="avatar-stack-circle counter">0</span>
@@ -831,35 +885,32 @@
             <span id="people-preview-sub">0% average onboarding completion</span>
           </div>
         </div>
-
-        <button type="button" class="btn-mentee-details" id="btn-toggle-detailed-roster" style="font-size: 13.5px; font-weight: 700;">
-          <span data-i18n="manageStudentsLink">Hide / Show table ↕</span>
-        </button>
       </div>
 
-      <!-- Detailed Roster Table (Visible by default so adding/managing works immediately) -->
-      <div id="detailed-roster-drawer" style="display: block; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
-        <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
-          <input type="text" id="admin-search-students" class="mentee-search-input" placeholder="Search roster by ID, name, or mentor..." style="flex: 2; min-width: 220px;" />
+      <!-- Detailed Roster Section (Completely hidden by default in collapsed state ▼) -->
+      <div id="detailed-roster-drawer" class="people-roster-accordion-body" hidden style="display: none; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+        <div class="people-roster-filter-bar" style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
+          <input type="text" id="admin-search-students" class="mentee-search-input" placeholder="Search roster by ID, name, department, or mentor..." style="flex: 2; min-width: 210px;" />
+          <select id="admin-filter-department" class="checklist-filter-select people-department-select" aria-label="Filter by Department" style="min-width: 190px; min-height: 42px; font-weight: 600;">
+            <option value="all">All Departments</option>
+          </select>
           <button type="button" class="modal-btn danger" id="btn-delete-selected-students" disabled>
             <span id="label-delete-selected-students" data-i18n="btnDeleteSelectedStudents">🗑️ Delete Selected (0)</span>
           </button>
         </div>
 
-        <div class="arc-table-container" style="max-height: 440px; overflow-y: auto;">
-          <div id="roster-students-list">
-            <div style="padding: 24px; text-align: center; color: #94a3b8;">0 records in roster. Click "+ Add person" or "Import CSV" to add students or mentors.</div>
-          </div>
+        <div class="arc-table-container" style="max-height: 460px; overflow-y: auto;">
+          <div id="roster-students-list"></div>
         </div>
       </div>
     </div>
 
-    <!-- 1. Mentor Monthly Reports — Clean 3-Level Hierarchical Drill-Down (Month -> Mentor -> Session PDFs) -->
+    <!-- 1. Mentor Monthly Reports — Semester-Based On-Demand Month Checklist & Mentor Directory -->
     <div class="admin-arc-reviews-box" id="admin-reports-box" style="margin-bottom: 24px;">
       <div class="arc-reviews-header" style="flex-wrap: wrap; gap: 12px;">
         <div class="arc-reviews-title-wrap">
           <h3>📑 Mentor Monthly Reports</h3>
-          <p>Select a month folder to view assigned mentors, track monthly quota (0/2, 1/2, or 2/2 Files Submitted), and inspect session PDFs</p>
+          <p>Select Fall or Spring Semester, check the calendar months to activate, and inspect each active month's mentor directory (0/2, 1/2, or 2/2 Files Submitted)</p>
         </div>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
           <span class="arc-pending-badge-pill" id="admin-reports-count-badge">0 files · 0 sessions</span>
@@ -869,12 +920,18 @@
         </div>
       </div>
 
-      <!-- Hierarchical Navigation Breadcrumb / Month Switcher Bar -->
-      <div id="admin-reports-breadcrumb-bar" class="reports-drilldown-bar"></div>
+      <!-- Level 1: Primary Semester Selector (Fall Semester vs. Spring Semester) -->
+      <div id="admin-semester-selector-bar" class="semester-selector-bar"></div>
 
-      <!-- Level 1 (Month Folder Cards) OR Level 2 (Selected Month Mentor Directory Table) -->
+      <!-- Level 2: Multi-Select Month Picker / Checklist (6 Standard Calendar Months of Selected Semester) -->
+      <div id="admin-semester-month-checklist" class="semester-month-checklist-panel"></div>
+
+      <!-- Active Month Directory Navigation & Filter Bar -->
+      <div id="admin-reports-breadcrumb-bar" class="reports-drilldown-bar" style="display: none;"></div>
+
+      <!-- Dynamic Active Month Cards (Selected Months Only) OR Selected Month Mentor Directory Table -->
       <div id="admin-monthly-reports-list" style="padding: 6px 0 4px;">
-        <div style="text-align: center; padding: 24px; color: #94a3b8; font-size: 13.5px;">Loading monthly report folders...</div>
+        <div style="text-align: center; padding: 24px; color: #94a3b8; font-size: 13.5px;">Loading semester report folders...</div>
       </div>
     </div>
 
@@ -887,7 +944,7 @@
         </div>
       </div>
       <div style="padding: 12px 0 4px;">
-        <form id="admin-announcement-form" style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 16px;">
+        <form id="admin-announcement-form" class="responsive-form-grid-2" style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 16px;">
           <input type="text" id="announcement-title" class="auth-input" placeholder="Announcement Title (e.g., Spring Campus Orientation)" required />
           <select id="announcement-category" class="auth-input">
             <option value="General">📌 General Notice</option>
@@ -964,24 +1021,63 @@
   </div>
 
   <!-- ============================================================
-       MODALS: CHAT, DOCUMENT REVIEW, REPORT, ARC GUIDE, ROSTER
+       MODALS & DRAWERS: MESSENGER (SYSTEM B), URGENT ALERTS (SYSTEM A), DOCS
   ============================================================ -->
-  <!-- 1. LIVE CHAT MODAL -->
-  <div id="chat-modal" class="modal-overlay" style="display: none;">
-    <div class="modal-card">
-      <div class="modal-header">
-        <div>
-          <h3 id="chat-modal-recipient" style="margin: 0; font-size: 16px; font-weight: 800;">Chat</h3>
-          <span id="chat-modal-role" style="font-size: 12px; color: #64748b;">Direct Message</span>
+  <!-- 1. SYSTEM B: STANDARD IN-APP MESSENGER DRAWER / WIDGET (CASUAL CHAT) -->
+  <div id="chat-modal" class="messenger-drawer-overlay" style="display: none;">
+    <div id="messenger-drawer" class="messenger-drawer-card" role="dialog" aria-label="KSU Compass Messenger">
+      <!-- Left / Top Pane: Conversation Threads Inbox -->
+      <div class="messenger-sidebar" id="messenger-sidebar">
+        <div class="messenger-sidebar-header">
+          <div class="messenger-brand-row">
+            <span class="messenger-brand-icon">💬</span>
+            <div>
+              <h4>Messenger</h4>
+              <span id="messenger-subtitle-scope">Casual chats &amp; consultation</span>
+            </div>
+          </div>
+          <div class="messenger-sidebar-actions">
+            <button type="button" id="messenger-mark-all-read" class="notif-mark-read-btn" title="Mark all chats read">Mark read</button>
+            <button type="button" class="modal-close-btn mobile-only-close" id="messenger-sidebar-close" aria-label="Close Messenger">&times;</button>
+          </div>
         </div>
-        <button type="button" class="modal-close-btn" id="chat-modal-close">&times;</button>
+        <div class="messenger-search-wrap">
+          <input type="text" id="messenger-search-input" class="messenger-search-input" placeholder="🔍 Search contacts or messages..." autocomplete="off" />
+        </div>
+        <div class="messenger-threads-list" id="messenger-threads-list">
+          <div class="messenger-empty-threads">Loading conversations...</div>
+        </div>
       </div>
-      <div class="chat-window">
-        <div class="chat-messages-container" id="chat-messages-list"></div>
-        <form id="chat-input-form" class="chat-input-bar">
-          <input type="text" id="chat-text-input" class="chat-text-input" placeholder="Type a message..." autocomplete="off" />
-          <button type="submit" class="btn-primary-action" style="padding: 8px 16px;">Send</button>
-        </form>
+
+      <!-- Right / Main Pane: Active Chat Bubbles & Composer -->
+      <div class="messenger-main" id="messenger-main">
+        <div class="messenger-chat-header">
+          <div class="messenger-chat-header-left">
+            <button type="button" class="messenger-back-btn" id="messenger-back-btn" aria-label="Back to Conversations">
+              ← Chats
+            </button>
+            <div class="messenger-active-avatar" id="chat-modal-avatar">--</div>
+            <div class="messenger-active-meta">
+              <h3 id="chat-modal-recipient">Select a conversation</h3>
+              <span id="chat-modal-role">Choose a contact on the left to start chatting</span>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="chat-modal-close" aria-label="Close Messenger">&times;</button>
+        </div>
+
+        <div class="chat-window">
+          <div class="chat-messages-container" id="chat-messages-list">
+            <div class="messenger-placeholder-state">
+              <span>💬</span>
+              <strong>Welcome to KSU Compass Messenger</strong>
+              <p id="messenger-placeholder-hint">Select an authorized contact from your inbox to start a conversation.</p>
+            </div>
+          </div>
+          <form id="chat-input-form" class="chat-input-bar">
+            <input type="text" id="chat-text-input" class="chat-text-input" placeholder="Write a message..." autocomplete="off" />
+            <button type="submit" class="btn-primary-action messenger-send-btn" id="chat-send-btn">Send ➤</button>
+          </form>
+        </div>
       </div>
     </div>
   </div>
@@ -1035,19 +1131,19 @@
 
         <h4 style="margin: 16px 0 8px; font-size: 14px; color: #0f172a; font-weight: 700;">Required Documents (외국인등록증 신청 준비 서류)</h4>
         <ol style="padding-left: 20px; margin: 0 0 16px;">
-          <li style="margin-bottom: 6px;"><strong>1. Application Form (통합신청서)</strong></li>
-          <li style="margin-bottom: 6px;"><strong>2. Passport Copy (여권 사본)</strong> & Original Passport</li>
+          <li style="margin-bottom: 6px;"><strong>Application Form (통합신청서)</strong></li>
+          <li style="margin-bottom: 6px;"><strong>Passport Copy (여권 사본)</strong> &amp; Original Passport</li>
           <li style="margin-bottom: 6px;">
-            <strong>3. ID Photo (사진 1매)</strong>
+            <strong>ID Photo (사진 1매)</strong>
             <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
               • Size: 3.5 x 4.5 cm<br />
               • Taken within the last 6 months (6개월 이내 새로 찍은 사진)<br />
               • White background (흰색 배경)
             </div>
           </li>
-          <li style="margin-bottom: 6px;"><strong>4. Application Fee (수수료):</strong> 50,000 KRW</li>
+          <li style="margin-bottom: 6px;"><strong>Application Fee (수수료):</strong> 50,000 KRW</li>
           <li style="margin-bottom: 6px;">
-            <strong>5. House Contract (집계약서 / 거주증명서)</strong>
+            <strong>House Contract (집계약서 / 거주증명서)</strong>
             <div style="background: #f1f5f9; padding: 8px 12px; border-radius: 6px; margin-top: 6px; font-size: 12px;">
               <strong>Dormitory Addresses (기숙사 주소):</strong>
               <p style="margin: 2px 0;">• On-Campus Dorm: 부산시 남구 수영로 309, 경성대학교 제1누리생활관</p>
@@ -1099,7 +1195,7 @@
             <span>Each mentor submits 6 session reports across a 3-month cycle (2 session PDFs per month).</span>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="responsive-form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="auth-input-group">
               <label class="auth-input-label">Reporting Month</label>
               <input type="month" id="report-month-input" class="auth-input" value="2026-10" required />
@@ -1128,7 +1224,7 @@
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 8px;">
             <strong style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 4px;">📎 Required: Attach Both Session PDFs Together (2 PDFs = 2 Monthly Sessions)</strong>
             <p style="font-size: 11.5px; color: #64748b; margin: 0 0 10px;">Both Session 1 PDF and Session 2 PDF must be uploaded together at the same time. Previously submitted months remain permanently stored.</p>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="responsive-form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div>
                 <label id="report-slot-1-label" for="report-pdf-1" style="font-size: 11.5px; font-weight: 700; color: #334155;">Session 1 PDF Document <span style="color: #dc2626;">*</span></label>
                 <div id="report-slot-1-status" style="display: none; font-size: 11.5px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px; margin-top: 4px; font-weight: 600;"></div>
@@ -1195,14 +1291,30 @@
             <label class="auth-input-label">Full Name</label>
             <input type="text" id="roster-name" class="auth-input" placeholder="e.g. Amr Hassan" required />
           </div>
+          <div class="auth-input-group">
+            <label class="auth-input-label">Department</label>
+            <input type="text" id="roster-department" class="auth-input" list="ksu-department-suggestions" placeholder="e.g. Global Business, Computer Science..." required />
+            <datalist id="ksu-department-suggestions">
+              <option value="Global Business"></option>
+              <option value="Computer Science"></option>
+              <option value="Media &amp; Communication"></option>
+              <option value="Mechanical Engineering"></option>
+              <option value="Korean Studies"></option>
+              <option value="Hospitality &amp; Tourism"></option>
+            </datalist>
+          </div>
+          <div class="auth-input-group">
+            <label class="auth-input-label">Email (Optional)</label>
+            <input type="email" id="roster-email" class="auth-input" placeholder="e.g. student@ks.ac.kr" />
+          </div>
           <div class="auth-input-group" id="roster-phone-group" style="display: none;">
             <label class="auth-input-label">Phone Number (Mentor)</label>
-            <input type="tel" id="roster-phone" class="auth-input" placeholder="010-1234-5678" />
+            <input type="tel" id="roster-phone" class="auth-input" placeholder="01012345678" />
           </div>
           <div class="auth-input-group" id="roster-mentor-group">
-            <label class="auth-input-label">Assign Mentor (Optional)</label>
+            <label class="auth-input-label">Assign Mentor (Optional — leave blank to auto-assign by Department)</label>
             <select id="roster-mentor-id" class="auth-input">
-              <option value="">Choose mentor...</option>
+              <option value="">Auto-assign by Department (or leave Unassigned)...</option>
             </select>
           </div>
         </div>
@@ -1218,7 +1330,7 @@
   <div id="arc-warning-confirm-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card" style="max-width: 440px;">
       <div class="modal-header">
-        <h3 id="arc-warning-confirm-title">✅ Urgent Reminder Dispatched</h3>
+        <h3 id="arc-warning-confirm-title">Urgent Reminder Dispatched</h3>
         <button type="button" class="modal-close-btn" id="arc-warning-confirm-close">&times;</button>
       </div>
       <div class="modal-body" style="text-align: center; padding: 26px 24px;">
@@ -1236,29 +1348,63 @@
     </div>
   </div>
 
-  <!-- 8. INLINE RENAME MONTH REPORT GROUP MODAL (ADMIN) -->
-  <div id="rename-month-modal" class="modal-overlay" style="display: none;">
-    <div class="modal-card" style="max-width: 420px;">
+  <!-- 7B. CSV ROSTER IMPORT FEEDBACK MODAL -->
+  <div id="csv-import-feedback-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 460px;">
       <div class="modal-header">
-        <h3>✏️ Edit Month Group Name</h3>
-        <button type="button" class="modal-close-btn" id="rename-month-modal-close">&times;</button>
+        <h3 id="csv-feedback-modal-title">Roster Import Complete</h3>
+        <button type="button" class="modal-close-btn" id="csv-feedback-modal-close">&times;</button>
       </div>
-      <form id="rename-month-form">
-        <div class="modal-body">
-          <input type="hidden" id="rename-month-key-hidden" />
-          <div class="auth-input-group">
-            <label class="auth-input-label" id="rename-month-key-display">Period: 2026-10</label>
-            <input type="text" id="rename-month-label-input" class="auth-input" placeholder="e.g. October Reports (Cycle 1)" required />
-          </div>
-          <p style="margin: 6px 0 0; font-size: 12px; color: #64748b;">Leave blank or click Reset to restore the default month name.</p>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="modal-btn" id="rename-month-reset-btn">Reset Default</button>
-          <button type="submit" class="btn-primary-action">Save Label</button>
-        </div>
-      </form>
+      <div class="modal-body" style="padding: 24px;">
+        <p id="csv-feedback-modal-message" style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0 0 10px; line-height: 1.45;">
+          Successfully imported 0 Students. Auto-assigned 0 students to matching department mentors.
+        </p>
+        <div id="csv-feedback-modal-meta" style="font-size: 12.5px; color: #475569; margin: 0; line-height: 1.5;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-primary-action" id="csv-feedback-modal-ok">Done</button>
+      </div>
     </div>
   </div>
+
+  <!-- 8. SYSTEM A: HIGH-PRIORITY URGENT INSTITUTIONAL WARNING MODAL (BLOCKING POPUP) -->
+  <div id="urgent-system-alert-modal" class="modal-overlay urgent-blocking-overlay" role="alertdialog" aria-modal="true" aria-labelledby="urgent-alert-title" style="display: none;">
+    <div class="modal-card urgent-alert-modal-card">
+      <div class="urgent-alert-banner-top">
+        <span class="urgent-pulse-badge">🚨 CRITICAL INSTITUTIONAL ALERT</span>
+        <span class="urgent-alert-queue-count" id="urgent-alert-queue-count" style="display: none;">1 of 1</span>
+      </div>
+      <div class="urgent-alert-body">
+        <div class="urgent-alert-icon-ring">⚠️</div>
+        <h3 id="urgent-alert-title" class="urgent-alert-title">Official Deadline Notice</h3>
+        <p id="urgent-alert-sender" class="urgent-alert-sender">Issued by International Office (Admin)</p>
+        <div class="urgent-alert-message-box">
+          <p id="urgent-alert-message">Please submit your required documents immediately.</p>
+          <span id="urgent-alert-meta" class="urgent-alert-meta">Action Required</span>
+        </div>
+        <p class="urgent-alert-footnote">
+          Explicit acknowledgment is required to dismiss this high-priority notice.
+        </p>
+      </div>
+      <div class="urgent-alert-footer">
+        <button type="button" class="btn-urgent-primary-cta" id="btn-urgent-alert-action" style="display: none;">
+          ⇪ Submit Now
+        </button>
+        <button type="button" class="btn-acknowledge-urgent" id="btn-acknowledge-urgent-alert">
+          ✓ Acknowledge / Mark as Read
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SYSTEM B: FLOATING BOTTOM-RIGHT MESSENGER LAUNCHER WIDGET -->
+  <button type="button" id="floating-messenger-fab" class="floating-messenger-fab" aria-label="Open Messenger" title="Open Messenger" style="display: none;">
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+    </svg>
+    <span class="floating-messenger-label">Chat</span>
+    <span class="floating-messenger-badge" id="floating-messenger-unread-badge" style="display: none;">0</span>
+  </button>
 
   <!-- Scripts -->
   <script type="module" src="app.js"></script>

@@ -1,0 +1,103 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function rosterDoc(personId) {
+      return get(/databases/$(database)/documents/roster/$(personId));
+    }
+
+    function isMentorRecord(personId) {
+      return exists(/databases/$(database)/documents/roster/$(personId)) &&
+        rosterDoc(personId).data.role == 'mentor';
+    }
+
+    function isStudentAssignedToMentor(studentId, mentorId) {
+      return exists(/databases/$(database)/documents/roster/$(studentId)) &&
+        rosterDoc(studentId).data.role == 'student' &&
+        rosterDoc(studentId).data.mentorId == mentorId;
+    }
+
+    // Strict Messaging Permission Matrix on /chats/{channelId}:
+    // Allowed pairs ONLY:
+    //   1. Admin <-> Mentor  (participants: ['admin', mentorId])
+    //   2. Mentor <-> Assigned Student (participants: [mentorId, studentId] where student.mentorId == mentorId)
+    // Strictly Blocked:
+    //   - Student <-> Admin (['admin', studentId])
+    //   - Student <-> Student
+    //   - Mentor <-> Unassigned/Other Student
+    //   - Mentor <-> Mentor
+    function isValidAuthorizedChatPair(participants) {
+      return participants is list &&
+        participants.size() == 2 &&
+        (
+          (participants[0] == 'admin' && isMentorRecord(participants[1])) ||
+          (participants[1] == 'admin' && isMentorRecord(participants[0])) ||
+          (isMentorRecord(participants[0]) && isStudentAssignedToMentor(participants[1], participants[0])) ||
+          (isMentorRecord(participants[1]) && isStudentAssignedToMentor(participants[0], participants[1]))
+        );
+    }
+
+    match /chats/{channelId} {
+      allow read: if (
+        resource == null ||
+        isValidAuthorizedChatPair(resource.data.participants)
+      ) && (
+        // Admins cannot read Student <-> Mentor private chats unless Admin is one of the participants (Admin <-> Mentor)
+        !isAdmin() || (resource != null && 'admin' in resource.data.participants)
+      );
+
+      allow create, update: if isValidAuthorizedChatPair(request.resource.data.participants) && (
+        !isAdmin() || ('admin' in request.resource.data.participants)
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // System A: High-Priority Urgent Institutional Warnings & Portal Settings
+    // Only Admin can dispatch urgent warnings; Students & Mentors can read and record acknowledgments
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin() || docId == 'portalConfig';
+    }
+
+    match /roster/{personId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /mentors/{mentorId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /checklists/{studentId} {
+      allow read, write: if true;
+    }
+
+    match /monthlyReports/{reportId} {
+      allow read, write: if true;
+    }
+
+    match /reportFiles/{fileId} {
+      allow read, write: if true;
+    }
+
+    match /announcements/{noticeId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /admins/{adminUid} {
+      allow read, write: if isSignedIn() && request.auth.uid == adminUid;
+    }
+  }
+}

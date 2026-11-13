@@ -47,12 +47,20 @@ let adminChecklistsMap = {};
 let adminReportsList = [];
 let adminAnnouncementsList = [];
 let activePeopleTab = "students"; // 'students' | 'mentors' | 'unassigned'
+let isPeopleRosterExpanded = false; // Default collapsed so 200+ student rows never clutter page load
+let adminDepartmentFilter = "all";  // 'all' or normalized department key
+let activeImportRole = "students";  // 'students' | 'mentors' (Default: 'students')
+let lastCsvImportSummary = null;
 let selectedRosterIds = new Set();
 
-// Admin Reports 3-Level Drill-Down & Dynamic Portal Config State
-// Level 1: adminSelectedReportMonth === null (Root Month Cards)
-// Level 2: adminSelectedReportMonth === "YYYY-MM" (Selected Month Mentor Directory)
-// Level 3: openMentorMonthSubmissionModal(mentorId, monthKey) (2 Session PDFs Inspector)
+// Admin Reports Semester-Based On-Demand Month Checklist & Dynamic Portal Config State
+// Level 1: adminSelectedSemester ('fall' | 'spring') + adminSelectedAcademicYear (e.g. 2026)
+// Level 2: Multi-Select Month Checklist (Admin checks any subset of the semester's 6 calendar months)
+// Level 3: adminSelectedReportMonth === "YYYY-MM" (Active Month Mentor Directory — strict X/2 quota)
+// Level 4: openMentorMonthSubmissionModal(mentorId, monthKey) (2 Session PDFs Inspector)
+let adminSelectedSemester = "fall"; // 'fall' | 'spring'
+let adminSelectedAcademicYear = 2026;
+let adminActiveMonthsBySemester = {}; // { "fall_2026": ["2026-10", ...], "spring_2026": ["2026-03", ...] }
 let adminSelectedReportMonth = null;
 let adminMonthMentorSearch = "";
 let adminMonthMentorStatusFilter = "all"; // 'all' | 'submitted' | 'pending'
@@ -263,8 +271,122 @@ function setLocalCollection(colName, mapObj) {
   }
 }
 
+function cleanMentorRefValue(val) {
+  const s = String(val || "").trim();
+  if (!s) return "";
+  const lower = s.toLowerCase();
+  if (lower === "none" || lower === "unassigned" || lower === "null" || lower === "undefined" || lower === "--") {
+    return "";
+  }
+  return s;
+}
+
+// Strict Messaging Permission Matrix Evaluator (Frontend UI + API/Persistence Guard)
+// - Student -> Assigned Mentor ONLY (1:1 direct chat; Admin/Office & other users strictly blocked)
+// - Mentor  -> Assigned Students + Admin ONLY (unassigned/other students & other mentors blocked)
+// - Admin   -> Mentors ONLY (Students strictly blocked; Admin -> Student is Urgent Warnings only)
+function isMessengerPairAuthorized(initiatorRole, initiatorId, recipientId, rosterArrayOrMap = null) {
+  const role = String(initiatorRole || "").trim().toLowerCase();
+  const initKey = role === "admin" ? "admin" : String(initiatorId || "").trim().toLowerCase();
+  const targetKey = String(recipientId || "").trim().toLowerCase();
+
+  if (!role || !initKey || !targetKey || initKey === targetKey) {
+    return false;
+  }
+
+  const rosterByKey = new Map();
+  const legacyMentors = getLocalCollection("mentors") || {};
+  Object.entries(legacyMentors).forEach(([id, data]) => {
+    if (id && data) {
+      rosterByKey.set(String(id).toLowerCase(), { role: "mentor", ...data, _id: id });
+    }
+  });
+
+  if (Array.isArray(rosterArrayOrMap)) {
+    rosterArrayOrMap.forEach((p) => {
+      if (p && p._id) {
+        rosterByKey.set(String(p._id).toLowerCase(), p);
+      }
+    });
+  } else if (rosterArrayOrMap instanceof Map) {
+    rosterArrayOrMap.forEach((p, k) => {
+      if (k && p) rosterByKey.set(String(k).toLowerCase(), p);
+    });
+  } else {
+    const localRoster = getLocalCollection("roster") || {};
+    const deletedRoster = getLocalCollection("roster_deleted") || {};
+    Object.entries(localRoster).forEach(([id, data]) => {
+      if (id && data && !deletedRoster[id]) {
+        rosterByKey.set(String(id).toLowerCase(), { ...data, _id: id });
+      }
+    });
+  }
+
+  if (role === "student") {
+    // Strictly prohibited: Students can NEVER message Admin / International Office
+    if (targetKey === "admin") return false;
+
+    const stuDoc = rosterByKey.get(initKey);
+    const isActiveSessionStudent = String(currentUserId || "").trim().toLowerCase() === initKey;
+    const rawAssignedMentor = stuDoc
+      ? stuDoc.mentorId
+      : isActiveSessionStudent
+        ? currentStudentMentorId
+        : "";
+    const assignedMentorKey = cleanMentorRefValue(rawAssignedMentor).toLowerCase();
+    if (!assignedMentorKey || targetKey !== assignedMentorKey) return false;
+
+    const targetDoc = rosterByKey.get(targetKey);
+    if (!targetDoc || targetDoc.role === "student") return false;
+    return true;
+  }
+
+  if (role === "mentor") {
+    const initDoc = rosterByKey.get(initKey);
+    if (initDoc && initDoc.role === "student") return false;
+
+    // Mentor <-> Admin allowed
+    if (targetKey === "admin") return true;
+
+    // Mentor <-> Assigned Student ONLY
+    const targetDoc = rosterByKey.get(targetKey);
+    if (!targetDoc || targetDoc.role !== "student") return false;
+    const stuMentorKey = cleanMentorRefValue(targetDoc.mentorId).toLowerCase();
+    return Boolean(stuMentorKey) && stuMentorKey === initKey;
+  }
+
+  if (role === "admin") {
+    // Strictly prohibited: Admins NEVER message students via Messenger
+    if (targetKey === "admin") return false;
+    const targetDoc = rosterByKey.get(targetKey);
+    return Boolean(targetDoc && targetDoc.role === "mentor");
+  }
+
+  return false;
+}
+
+function isChatChannelAuthorizedForCurrentSession(channelId, rosterArrayOrMap = null) {
+  if (!currentRole) return false;
+  const myKey = String(currentRole === "admin" ? "admin" : currentUserId || "").trim().toLowerCase();
+  if (!myKey) return false;
+
+  const parts = String(channelId || "")
+    .trim()
+    .toLowerCase()
+    .split("__")
+    .filter(Boolean);
+  if (parts.length !== 2 || !parts.includes(myKey)) return false;
+
+  const otherKey = parts[0] === myKey ? parts[1] : parts[0];
+  return isMessengerPairAuthorized(currentRole, currentUserId, otherKey, rosterArrayOrMap);
+}
+
 async function dbGetDoc(colName, docId) {
   const key = String(docId);
+  if (colName === "chats" && !isChatChannelAuthorizedForCurrentSession(key)) {
+    return null;
+  }
+
   const localMap = getLocalCollection(colName);
   let localData = localMap[key] || null;
 
@@ -315,9 +437,13 @@ async function dbGetAll(colName) {
     // Firestore rules blocked read: use localMap seamlessly
   }
 
-  const results = Object.entries(localMap)
+  let results = Object.entries(localMap)
     .filter(([id]) => !deletedMap[id])
     .map(([id, data]) => ({ ...data, _id: id }));
+
+  if (colName === "chats") {
+    results = results.filter((docItem) => isChatChannelAuthorizedForCurrentSession(docItem._id));
+  }
 
   if (colName === "monthlyReports") {
     await hydrateReportsWithVaultFiles(results);
@@ -327,6 +453,22 @@ async function dbGetAll(colName) {
 
 async function dbSetDoc(colName, docId, data, merge = true) {
   const key = String(docId);
+  if (colName === "chats") {
+    if (!isChatChannelAuthorizedForCurrentSession(key)) {
+      throw new Error("403 Forbidden: Messaging channel is not permitted for your role.");
+    }
+    const chParts = key.toLowerCase().split("__").filter(Boolean);
+    if (Array.isArray(data?.messages)) {
+      for (const m of data.messages) {
+        const sKey = String(m?.senderId || "").trim().toLowerCase();
+        const rKey = String(m?.recipientId || "").trim().toLowerCase();
+        if ((sKey && !chParts.includes(sKey)) || (rKey && !chParts.includes(rKey))) {
+          throw new Error("403 Forbidden: Message participant mismatch in chat channel.");
+        }
+      }
+    }
+  }
+
   const localMap = getLocalCollection(colName);
   const deletedMap = getLocalCollection(colName + "_deleted");
   if (deletedMap[key]) {
@@ -524,13 +666,21 @@ function buildDefaultArcDeadlineLocal() {
 async function loadPortalConfig() {
   const stored = await dbGetDoc("settings", "portalConfig");
   if (stored && stored.arcDeadline) {
+    const storedActiveMonths =
+      stored.activeSemesterMonths && typeof stored.activeSemesterMonths === "object"
+        ? stored.activeSemesterMonths
+        : {};
+    adminActiveMonthsBySemester = {
+      ...storedActiveMonths,
+      ...adminActiveMonthsBySemester
+    };
     portalConfigCache = {
       arcDeadline: stored.arcDeadline,
       arcCustomMessage:
         typeof stored.arcCustomMessage === "string" && stored.arcCustomMessage.trim()
           ? stored.arcCustomMessage.trim()
           : DEFAULT_ARC_BANNER_TEMPLATE,
-      monthLabels: stored.monthLabels || {},
+      activeSemesterMonths: { ...adminActiveMonthsBySemester },
       arcWarning: stored.arcWarning || { active: false, lastSentAt: "", lastRecipientCount: 0 },
       mentorReportWarnings: stored.mentorReportWarnings || {}
     };
@@ -543,9 +693,16 @@ async function loadPortalConfig() {
       typeof stored?.arcCustomMessage === "string" && stored.arcCustomMessage.trim()
         ? stored.arcCustomMessage.trim()
         : DEFAULT_ARC_BANNER_TEMPLATE,
-    monthLabels: stored?.monthLabels || {},
+    activeSemesterMonths:
+      stored?.activeSemesterMonths && typeof stored.activeSemesterMonths === "object"
+        ? stored.activeSemesterMonths
+        : {},
     arcWarning: stored?.arcWarning || { active: false, lastSentAt: "", lastRecipientCount: 0 },
     mentorReportWarnings: stored?.mentorReportWarnings || {}
+  };
+  adminActiveMonthsBySemester = {
+    ...initialConfig.activeSemesterMonths,
+    ...adminActiveMonthsBySemester
   };
   await dbSetDoc("settings", "portalConfig", initialConfig);
   portalConfigCache = initialConfig;
@@ -561,7 +718,10 @@ async function savePortalConfig(partialUpdate) {
       partialUpdate.arcCustomMessage !== undefined
         ? String(partialUpdate.arcCustomMessage || "").trim() || DEFAULT_ARC_BANNER_TEMPLATE
         : base.arcCustomMessage || DEFAULT_ARC_BANNER_TEMPLATE,
-    monthLabels: partialUpdate.monthLabels !== undefined ? partialUpdate.monthLabels : (base.monthLabels || {}),
+    activeSemesterMonths:
+      partialUpdate.activeSemesterMonths !== undefined
+        ? partialUpdate.activeSemesterMonths
+        : (base.activeSemesterMonths || {}),
     arcWarning: partialUpdate.arcWarning !== undefined ? partialUpdate.arcWarning : (base.arcWarning || {}),
     mentorReportWarnings:
       partialUpdate.mentorReportWarnings !== undefined
@@ -569,6 +729,7 @@ async function savePortalConfig(partialUpdate) {
         : (base.mentorReportWarnings || {}),
     updatedAt: new Date().toISOString()
   };
+  delete next.monthLabels;
   await dbSetDoc("settings", "portalConfig", next, false);
   portalConfigCache = next;
   return next;
@@ -625,22 +786,24 @@ const MONTH_NAMES_EN = [
   "July", "August", "September", "October", "November", "December"
 ];
 
-function formatDefaultMonthGroupLabel(monthKey) {
+// Strictly standard calendar name (e.g. "March", "April", "September") — no dynamic renaming
+function getCalendarMonthName(monthKey) {
   const clean = String(monthKey || "").trim();
   const match = clean.match(/^(\d{4})-(\d{2})$/);
-  if (!match) return clean ? `${clean} Reports` : "Uncategorized Reports";
+  if (!match) return clean || "Uncategorized";
   const monthIdx = Number(match[2]) - 1;
-  const monthName = MONTH_NAMES_EN[monthIdx] || clean;
-  return `${monthName} Reports`;
+  return MONTH_NAMES_EN[monthIdx] || clean;
 }
 
+function formatDefaultMonthGroupLabel(monthKey) {
+  const clean = String(monthKey || "").trim();
+  if (!clean) return "Uncategorized Reports";
+  return `${getCalendarMonthName(clean)} Reports`;
+}
+
+// Strictly returns the standard calendar display name (e.g. "March Reports") with zero custom overrides
 function getMonthGroupDisplayName(monthKey) {
-  const key = String(monthKey || "").trim();
-  const custom = portalConfigCache?.monthLabels?.[key];
-  if (custom && String(custom).trim()) {
-    return String(custom).trim();
-  }
-  return formatDefaultMonthGroupLabel(key);
+  return formatDefaultMonthGroupLabel(monthKey);
 }
 
 // Strict 1:1 mapping: Each uploaded session PDF document maps 1:1 to 1 session record
@@ -652,14 +815,129 @@ function getReportSessionCount(rep) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-// Returns chronological cycle months (always includes Oct, Nov, Dec + any custom/submitted months)
+const SEMESTER_DEFINITIONS = {
+  fall: {
+    key: "fall",
+    label: "Fall Semester",
+    rangeLabel: "September – February",
+    shortRange: "Sep – Feb",
+    icon: "🍂"
+  },
+  spring: {
+    key: "spring",
+    label: "Spring Semester",
+    rangeLabel: "March – August",
+    shortRange: "Mar – Aug",
+    icon: "🌱"
+  }
+};
+
+// Returns the dedicated 6 calendar months (YYYY-MM) for a selected semester and academic year:
+// - Fall Semester ("fall"): September through February (YYYY-09 .. YYYY-12, (YYYY+1)-01, (YYYY+1)-02)
+// - Spring Semester ("spring"): March through August (YYYY-03 .. YYYY-08)
+function getSemesterMonths(semesterKey = "fall", academicYear = 2026) {
+  const yr = Number(academicYear) || 2026;
+  if (semesterKey === "spring") {
+    return [`${yr}-03`, `${yr}-04`, `${yr}-05`, `${yr}-06`, `${yr}-07`, `${yr}-08`];
+  }
+  return [`${yr}-09`, `${yr}-10`, `${yr}-11`, `${yr}-12`, `${yr + 1}-01`, `${yr + 1}-02`];
+}
+
+// Infers { semester: 'fall' | 'spring', year: Number } for any YYYY-MM string
+function inferSemesterAndYearFromMonth(monthKey) {
+  const clean = String(monthKey || "").trim();
+  const match = clean.match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return { semester: "fall", year: 2026 };
+  }
+  const yr = Number(match[1]);
+  const mo = Number(match[2]);
+  if (mo >= 3 && mo <= 8) {
+    return { semester: "spring", year: yr };
+  }
+  if (mo >= 1 && mo <= 2) {
+    return { semester: "fall", year: yr - 1 };
+  }
+  return { semester: "fall", year: yr };
+}
+
+function isSameSemesterBlock(monthA, monthB) {
+  const a = inferSemesterAndYearFromMonth(monthA);
+  const b = inferSemesterAndYearFromMonth(monthB);
+  return a.semester === b.semester && a.year === b.year;
+}
+
+function getSemesterBlockKey(semesterKey = "fall", academicYear = 2026) {
+  const sem = semesterKey === "spring" ? "spring" : "fall";
+  const yr = Number(academicYear) || 2026;
+  return `${sem}_${yr}`;
+}
+
+// Returns ONLY the months explicitly checked/selected by the Admin for this semester (in calendar order).
+// Never auto-generates all 6 cards at once: if never configured yet, only months that already have
+// submitted reports (if any) are initially active; empty semesters start with 0 checked months ([]).
+function getActiveCheckedMonthsForSemester(
+  semesterKey = "fall",
+  academicYear = 2026,
+  reportsSource = adminReportsList
+) {
+  const allSix = getSemesterMonths(semesterKey, academicYear);
+  const blockKey = getSemesterBlockKey(semesterKey, academicYear);
+
+  const explicitList = Array.isArray(adminActiveMonthsBySemester[blockKey])
+    ? adminActiveMonthsBySemester[blockKey]
+    : Array.isArray(portalConfigCache?.activeSemesterMonths?.[blockKey])
+    ? portalConfigCache.activeSemesterMonths[blockKey]
+    : null;
+
+  if (explicitList !== null) {
+    const selectedSet = new Set(explicitList);
+    return allSix.filter((mk) => selectedSet.has(mk));
+  }
+
+  // First-time default: never activate all 6 months automatically; only activate months with existing uploads
+  const submittedMonthsSet = new Set(
+    (reportsSource || []).map((r) => r?.month).filter(Boolean)
+  );
+  return allSix.filter((mk) => submittedMonthsSet.has(mk));
+}
+
+function setActiveCheckedMonthsForSemester(semesterKey, academicYear, nextCheckedMonths) {
+  const allSix = getSemesterMonths(semesterKey, academicYear);
+  const blockKey = getSemesterBlockKey(semesterKey, academicYear);
+  const wanted = new Set(Array.isArray(nextCheckedMonths) ? nextCheckedMonths : []);
+  const orderedSelection = allSix.filter((mk) => wanted.has(mk));
+
+  adminActiveMonthsBySemester = {
+    ...(portalConfigCache?.activeSemesterMonths || {}),
+    ...adminActiveMonthsBySemester,
+    [blockKey]: orderedSelection
+  };
+
+  if (adminSelectedReportMonth && !orderedSelection.includes(adminSelectedReportMonth)) {
+    adminSelectedReportMonth = null;
+  }
+
+  // Persist asynchronously without blocking instant UI toggle
+  savePortalConfig({ activeSemesterMonths: { ...adminActiveMonthsBySemester } }).catch(() => {});
+  return orderedSelection;
+}
+
+function getAvailableAcademicYears(reportsSource = []) {
+  const years = new Set([2025, 2026, 2027]);
+  (reportsSource || []).forEach((r) => {
+    if (r?.month) {
+      years.add(inferSemesterAndYearFromMonth(r.month).year);
+    }
+  });
+  return Array.from(years).sort((a, b) => a - b);
+}
+
+// Returns chronological cycle months (always includes Oct, Nov, Dec + any submitted months)
 function buildActiveCycleMonths(reportsSource = []) {
   const set = new Set(DEFAULT_CYCLE_MONTHS);
   (reportsSource || []).forEach((r) => {
     if (r?.month) set.add(r.month);
-  });
-  Object.keys(portalConfigCache?.monthLabels || {}).forEach((mk) => {
-    if (mk) set.add(mk);
   });
   return Array.from(set).sort((a, b) => String(a).localeCompare(String(b)));
 }
@@ -780,54 +1058,112 @@ function applyTranslations() {
   }
 }
 
+const mobileLangSelect = document.getElementById("mobile-lang-select");
+
 if (globalLangSelect) {
   globalLangSelect.value = getLang();
   globalLangSelect.addEventListener("change", (e) => {
     setLang(e.target.value);
   });
 }
+if (mobileLangSelect) {
+  mobileLangSelect.value = getLang();
+  mobileLangSelect.addEventListener("change", (e) => {
+    setLang(e.target.value);
+  });
+}
 onLangChange(() => {
+  if (globalLangSelect) globalLangSelect.value = getLang();
+  if (mobileLangSelect) mobileLangSelect.value = getLang();
   applyTranslations();
   if (currentRole === "admin") renderAdminAll();
   if (currentRole === "mentor") loadMentorDashboard(currentUserId, currentUserName);
   if (currentRole === "student") loadStudentDashboard(currentUserId, currentUserName);
 });
 
+function openMobileNavDrawer() {
+  const drawer = document.getElementById("mobile-nav-drawer");
+  const backdrop = document.getElementById("mobile-nav-backdrop");
+  const toggleBtn = document.getElementById("mobile-nav-toggle-btn");
+  if (backdrop) backdrop.style.display = "block";
+  if (drawer) drawer.style.display = "flex";
+  if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
+}
+
+function closeMobileNavDrawer() {
+  const drawer = document.getElementById("mobile-nav-drawer");
+  const backdrop = document.getElementById("mobile-nav-backdrop");
+  const toggleBtn = document.getElementById("mobile-nav-toggle-btn");
+  if (backdrop) backdrop.style.display = "none";
+  if (drawer) drawer.style.display = "none";
+  if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
+}
+
+document.getElementById("mobile-nav-toggle-btn")?.addEventListener("click", () => {
+  const drawer = document.getElementById("mobile-nav-drawer");
+  if (drawer && drawer.style.display === "flex") closeMobileNavDrawer();
+  else openMobileNavDrawer();
+});
+document.getElementById("mobile-nav-close-btn")?.addEventListener("click", closeMobileNavDrawer);
+document.getElementById("mobile-nav-backdrop")?.addEventListener("click", closeMobileNavDrawer);
+
 function renderTopbarForRole(role) {
   if (!navCenterTabs || !navAuthControls) return;
+  const mobileLinksEl = document.getElementById("mobile-nav-links");
+  const mobileUserNameEl = document.getElementById("mobile-nav-user-name");
+  const mobileAvatarEl = document.getElementById("mobile-user-avatar-initials");
+  const mobileRoleTagEl = document.getElementById("mobile-nav-role-tag");
+  const floatingFab = document.getElementById("floating-messenger-fab");
 
   if (!role) {
+    document.body.classList.remove("is-authenticated");
     navCenterTabs.style.display = "none";
     navAuthControls.style.display = "none";
+    if (floatingFab) floatingFab.style.display = "none";
+    closeMobileNavDrawer();
     if (navPortalTag) navPortalTag.textContent = t("heroBadge");
     return;
   }
 
+  document.body.classList.add("is-authenticated");
   navCenterTabs.style.display = "flex";
   navAuthControls.style.display = "flex";
+  if (floatingFab) floatingFab.style.display = "inline-flex";
+
+  const displayUser = currentUserName || (role === "admin" ? "Admin" : "User");
+  if (mobileUserNameEl) mobileUserNameEl.textContent = displayUser;
+  if (mobileAvatarEl) mobileAvatarEl.textContent = getInitials(displayUser);
 
   const iconHome = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1V9.5z"/></svg>`;
   const iconCheck = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12l2 2 4-4"/></svg>`;
   const iconUsers = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
   const iconMsg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`;
   const iconDoc = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`;
-  const iconGear = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+  const iconGear = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0 4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+
+  let mobileItems = [];
 
   if (role === "student") {
-    if (navPortalTag) navPortalTag.textContent = t("brandPortalTagStudent");
+    const tagText = t("brandPortalTagStudent");
+    if (navPortalTag) navPortalTag.textContent = tagText;
+    if (mobileRoleTagEl) mobileRoleTagEl.textContent = tagText;
     navCenterTabs.innerHTML = `
       <button type="button" class="nav-tab-btn active" data-scroll-target="checklist-card">${iconHome}<span>${escapeHtml(t("navOverview"))}</span></button>
       <button type="button" class="nav-tab-btn" data-scroll-target="checklist">${iconCheck}<span>${escapeHtml(t("navChecklist"))}</span></button>
       <button type="button" class="nav-tab-btn" id="nav-student-chat-btn">${iconMsg}<span>${escapeHtml(t("navMessages"))}</span></button>
     `;
-    const msgBtn = document.getElementById("nav-student-chat-btn");
-    if (msgBtn) {
-      msgBtn.addEventListener("click", () => {
-        document.getElementById("student-chat-mentor-btn")?.click();
-      });
-    }
+    document.getElementById("nav-student-chat-btn")?.addEventListener("click", () => {
+      openMessengerDrawer();
+    });
+    mobileItems = [
+      { label: t("navOverview"), icon: iconHome, scrollTarget: "checklist-card", active: true },
+      { label: t("navChecklist"), icon: iconCheck, scrollTarget: "checklist" },
+      { label: t("navMessages"), icon: iconMsg, action: () => openMessengerDrawer() }
+    ];
   } else if (role === "mentor") {
-    if (navPortalTag) navPortalTag.textContent = t("brandPortalTagMentor");
+    const tagText = t("brandPortalTagMentor");
+    if (navPortalTag) navPortalTag.textContent = tagText;
+    if (mobileRoleTagEl) mobileRoleTagEl.textContent = tagText;
     navCenterTabs.innerHTML = `
       <button type="button" class="nav-tab-btn active" data-scroll-target="mentor-dashboard-card">${iconHome}<span>${escapeHtml(t("navOverview"))}</span></button>
       <button type="button" class="nav-tab-btn" data-scroll-target="mentee-list">${iconUsers}<span>${escapeHtml(t("navMentees"))}</span></button>
@@ -835,13 +1171,21 @@ function renderTopbarForRole(role) {
       <button type="button" class="nav-tab-btn" id="nav-mentor-report-btn">${iconDoc}<span>${escapeHtml(t("navReports"))}</span></button>
     `;
     document.getElementById("nav-mentor-msg-btn")?.addEventListener("click", () => {
-      document.getElementById("mentor-chat-admin-btn")?.click();
+      openMessengerDrawer();
     });
     document.getElementById("nav-mentor-report-btn")?.addEventListener("click", () => {
       document.getElementById("mentor-open-report-btn")?.click();
     });
+    mobileItems = [
+      { label: t("navOverview"), icon: iconHome, scrollTarget: "mentor-dashboard-card", active: true },
+      { label: t("navMentees"), icon: iconUsers, scrollTarget: "mentee-list" },
+      { label: t("navMessages"), icon: iconMsg, action: () => openMessengerDrawer() },
+      { label: t("navReports"), icon: iconDoc, action: () => document.getElementById("mentor-open-report-btn")?.click() }
+    ];
   } else if (role === "admin") {
-    if (navPortalTag) navPortalTag.textContent = t("brandPortalTagAdmin");
+    const tagText = t("brandPortalTagAdmin");
+    if (navPortalTag) navPortalTag.textContent = tagText;
+    if (mobileRoleTagEl) mobileRoleTagEl.textContent = tagText;
     navCenterTabs.innerHTML = `
       <button type="button" class="nav-tab-btn active" data-scroll-target="stat-grid">${iconHome}<span>${escapeHtml(t("navOverview"))}</span></button>
       <button type="button" class="nav-tab-btn" data-scroll-target="admin-people-card">${iconUsers}<span>${escapeHtml(t("navPeople"))}</span></button>
@@ -849,6 +1193,14 @@ function renderTopbarForRole(role) {
       <button type="button" class="nav-tab-btn" data-scroll-target="admin-reports-box">${iconDoc}<span>${escapeHtml(t("navReports"))}</span></button>
       <button type="button" class="nav-tab-btn" data-scroll-target="admin-settings-box">${iconGear}<span>Settings</span></button>
     `;
+    mobileItems = [
+      { label: t("navOverview"), icon: iconHome, scrollTarget: "stat-grid", active: true },
+      { label: t("navPeople"), icon: iconUsers, scrollTarget: "admin-people-card" },
+      { label: t("navArcReviews"), icon: iconDoc, scrollTarget: "admin-arc-card" },
+      { label: t("navReports"), icon: iconDoc, scrollTarget: "admin-reports-box" },
+      { label: "Settings", icon: iconGear, scrollTarget: "admin-settings-box" },
+      { label: "Messenger", icon: iconMsg, action: () => openMessengerDrawer() }
+    ];
   }
 
   navCenterTabs.querySelectorAll("[data-scroll-target]").forEach((btn) => {
@@ -860,6 +1212,36 @@ function renderTopbarForRole(role) {
       if (targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
+
+  if (mobileLinksEl) {
+    mobileLinksEl.innerHTML = mobileItems
+      .map(
+        (item, idx) => `
+          <button type="button" class="mobile-drawer-nav-item ${item.active ? "active" : ""}" data-mobile-nav-idx="${idx}">
+            <span class="nav-item-left">${item.icon}<span>${escapeHtml(item.label)}</span></span>
+            <span style="color: #94a3b8;">›</span>
+          </button>
+        `
+      )
+      .join("");
+
+    mobileLinksEl.querySelectorAll("[data-mobile-nav-idx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.getAttribute("data-mobile-nav-idx"));
+        const cfg = mobileItems[idx];
+        closeMobileNavDrawer();
+        if (!cfg) return;
+        mobileLinksEl.querySelectorAll(".mobile-drawer-nav-item").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        if (cfg.scrollTarget) {
+          const targetEl = document.getElementById(cfg.scrollTarget);
+          if (targetEl) targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else if (typeof cfg.action === "function") {
+          cfg.action();
+        }
+      });
+    });
+  }
 }
 
 function showSection(section) {
@@ -882,11 +1264,31 @@ function showSection(section) {
 
   const notifDropdown = document.getElementById("nav-notifications-dropdown");
   if (notifDropdown) notifDropdown.style.display = "none";
+  closeMobileNavDrawer();
 
-  currentRole = section === "login" ? null : section;
+  const nextRole = section === "login" ? null : section;
+  if (section === "login" || currentRole !== nextRole) {
+    activeChatRecipientId = null;
+    activeChatRecipientName = "";
+    cachedMessengerThreads = [];
+  }
+
+  if (section === "login") {
+    const chatOverlay = document.getElementById("chat-modal");
+    if (chatOverlay) chatOverlay.style.display = "none";
+    const urgentModal = document.getElementById("urgent-system-alert-modal");
+    if (urgentModal) urgentModal.style.display = "none";
+  }
+
+  currentRole = nextRole;
   renderTopbarForRole(currentRole);
   if (currentRole) {
-    setTimeout(() => refreshBellNotifications(false), 50);
+    if (currentRole === "student" || currentRole === "mentor") {
+      requestUrgentPushPermission(false);
+    }
+    setTimeout(() => {
+      refreshBellNotifications(false);
+    }, 60);
   }
 }
 
@@ -1299,6 +1701,7 @@ async function loadStudentDashboard(studentId, studentName) {
   const mentorNameEl = document.getElementById("mentor-display-name");
   const mentorInitEl = document.getElementById("mentor-avatar-initials");
   const mentorPhoneEl = document.getElementById("mentor-phone-or-reply");
+  const mentorChatBtnEl = document.getElementById("student-chat-mentor-btn");
 
   if (candidateMentorId && mentorDoc && mentorDoc.role !== "student") {
     currentStudentMentorId = candidateMentorId;
@@ -1307,15 +1710,25 @@ async function loadStudentDashboard(studentId, studentName) {
     if (mentorNameEl) mentorNameEl.textContent = mName;
     if (mentorInitEl) mentorInitEl.textContent = getInitials(mName);
     if (mentorPhoneEl) mentorPhoneEl.textContent = mPhone;
+    if (mentorChatBtnEl) {
+      mentorChatBtnEl.disabled = false;
+      mentorChatBtnEl.removeAttribute("title");
+    }
   } else {
     currentStudentMentorId = null;
     if (mentorNameEl) mentorNameEl.textContent = "Not Assigned Yet";
     if (mentorInitEl) mentorInitEl.textContent = "--";
     if (mentorPhoneEl) mentorPhoneEl.textContent = "• Waiting for mentor assignment";
+    if (mentorChatBtnEl) {
+      mentorChatBtnEl.disabled = true;
+      mentorChatBtnEl.setAttribute("title", "Direct messaging unlocks once a mentor is assigned to you.");
+    }
   }
 
-  // Load Campus Announcements for Student
+  // Load Campus Announcements & Check System A Urgent Institutional Alerts
   await renderAnnouncementsForStudentAndMentor();
+  await checkAndDisplayUrgentSystemAlerts(true);
+  await refreshMessengerUnreadBadges(false);
 }
 
 function renderStudentArcDeadlineAndBanner(tasks, taskDocs, config) {
@@ -1481,23 +1894,27 @@ document.getElementById("task-doc-input")?.addEventListener("change", async (e) 
   }
 });
 
-// Student Mentor Chat & ARC Guide Buttons
+// Student Mentor Chat & ARC Guide Buttons (Strictly Assigned Mentor ONLY — never Admin/Office)
 ["student-msg-mentor-top-btn", "student-chat-mentor-btn"].forEach((btnId) => {
   document.getElementById(btnId)?.addEventListener("click", async () => {
     if (!currentStudentMentorId) {
-      openChatModal("admin", "International Office (Admin)", "Office Support");
+      showToast(
+        "Mentor Not Assigned Yet",
+        "Direct messaging unlocks automatically once a mentor is assigned to you.",
+        "info"
+      );
       return;
     }
-    const mDoc = await dbGetDoc("roster", currentStudentMentorId);
+    const mDoc =
+      (await dbGetDoc("roster", currentStudentMentorId)) ||
+      (await dbGetDoc("mentors", currentStudentMentorId));
     openChatModal(currentStudentMentorId, mDoc?.name || currentStudentMentorId, "Assigned Mentor");
   });
 });
 
-["btn-view-arc-guide-upnext", "checklist-arc-guide-btn"].forEach((btnId) => {
-  document.getElementById(btnId)?.addEventListener("click", () => {
-    const modal = document.getElementById("arc-guide-modal");
-    if (modal) modal.style.display = "flex";
-  });
+document.getElementById("btn-view-arc-guide-upnext")?.addEventListener("click", () => {
+  const modal = document.getElementById("arc-guide-modal");
+  if (modal) modal.style.display = "flex";
 });
 ["arc-guide-modal-close", "arc-guide-modal-ok-btn"].forEach((btnId) => {
   document.getElementById(btnId)?.addEventListener("click", () => {
@@ -1779,6 +2196,8 @@ async function loadMentorDashboard(mentorId, mentorName) {
   }
 
   await renderAnnouncementsForStudentAndMentor();
+  await checkAndDisplayUrgentSystemAlerts(true);
+  await refreshMessengerUnreadBadges(false);
 }
 
 function renderMentorStudentCards(students, checklistMap) {
@@ -2031,16 +2450,23 @@ async function refreshMentorReportModalState() {
     sessionsInput.value = String(hasBothValidPdfs ? MONTH_MAX_SESSIONS : files.length);
   }
 
-  const totalSubmitted = myReports.reduce((sum, r) => sum + getReportSessionCount(r), 0);
+  const selectedSemesterInfo = inferSemesterAndYearFromMonth(selectedMonth);
+  const selectedSemesterLabel = `${SEMESTER_DEFINITIONS[selectedSemesterInfo.semester].label} ${selectedSemesterInfo.year}`;
+  const selectedSemesterMonths = getSemesterMonths(selectedSemesterInfo.semester, selectedSemesterInfo.year);
+  const mySemesterReports = myReports.filter((r) => isSameSemesterBlock(r.month, selectedMonth));
+
+  const totalSubmitted = mySemesterReports.reduce((sum, r) => sum + getReportSessionCount(r), 0);
   const remainingCycle = Math.max(0, CYCLE_TOTAL_SESSIONS - totalSubmitted);
 
-  const cycleSummaryPills = DEFAULT_CYCLE_MONTHS.map((mk) => {
-    const c = getMentorMonthAggregatedData(currentUserId, mk, myReports).filesCount;
-    return `${getMonthGroupDisplayName(mk).replace(/ Reports$/i, "")}: ${c}/${MONTH_MAX_SESSIONS}`;
-  }).join(" · ");
+  const cycleSummaryPills = selectedSemesterMonths
+    .map((mk) => {
+      const c = getMentorMonthAggregatedData(currentUserId, mk, mySemesterReports).filesCount;
+      return `${getMonthGroupDisplayName(mk).replace(/ Reports$/i, "").slice(0, 3)}: ${c}/${MONTH_MAX_SESSIONS}`;
+    })
+    .join(" · ");
 
   infoBanner.innerHTML = `
-    <strong>Cycle Progress: ${totalSubmitted} / ${CYCLE_TOTAL_SESSIONS} Total Sessions Completed (${escapeHtml(cycleSummaryPills)})</strong>
+    <strong>${escapeHtml(selectedSemesterLabel)} Progress: ${totalSubmitted} / ${CYCLE_TOTAL_SESSIONS} Total Sessions Completed (${escapeHtml(cycleSummaryPills)})</strong>
     <span>${
       isMonthAlreadySubmitted
         ? `✓ ${escapeHtml(getMonthGroupDisplayName(selectedMonth))} already has ${storedMonthFiles.length}/${MONTH_MAX_SESSIONS} file(s) permanently stored. Select another unsubmitted month above.`
@@ -2064,7 +2490,7 @@ async function refreshMentorReportModalState() {
       reqNote.style.background = "#f0fdf4";
       reqNote.style.borderColor = "#bbf7d0";
       reqNote.style.color = "#15803d";
-      reqNote.textContent = `✓ Full 6 / 6 cycle completed across 3 months.`;
+      reqNote.textContent = `✓ Full 6 / 6 cycle completed for ${selectedSemesterLabel}.`;
     } else if (hasInvalidFileType) {
       reqNote.style.background = "#fef2f2";
       reqNote.style.borderColor = "#fecaca";
@@ -2187,13 +2613,14 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
     return;
   }
 
-  // Validate against 6-session / 3-month cycle rules & strictly append without overwriting
+  // Validate against per-semester 6-session / 3-month cycle rules & strictly append without overwriting
   const allReports = await dbGetAll("monthlyReports");
   const myReports = allReports.filter(
     (r) => String(r.mentorId || "").toLowerCase() === String(currentUserId).toLowerCase()
   );
+  const mySemesterReports = myReports.filter((r) => isSameSemesterBlock(r.month, month));
 
-  const existingTotalSessions = myReports.reduce((sum, r) => sum + getReportSessionCount(r), 0);
+  const existingTotalSessions = mySemesterReports.reduce((sum, r) => sum + getReportSessionCount(r), 0);
   const existingMonthReports = myReports.filter((r) => r.month === month);
   const existingMonthSessions = existingMonthReports.reduce((sum, r) => sum + getReportSessionCount(r), 0);
 
@@ -2210,18 +2637,18 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
   if (existingTotalSessions + collectedFiles.length > CYCLE_TOTAL_SESSIONS) {
     showToast(
       "Cycle Limit Reached (6 / 6 Sessions)",
-      `You have already submitted ${existingTotalSessions} / ${CYCLE_TOTAL_SESSIONS} sessions in this 3-month cycle.`,
+      `You have already submitted ${existingTotalSessions} / ${CYCLE_TOTAL_SESSIONS} sessions in this semester's 3-month cycle.`,
       "warning"
     );
     await refreshMentorReportModalState();
     return;
   }
 
-  const distinctMonths = new Set(myReports.map((r) => r.month).filter(Boolean));
+  const distinctMonths = new Set(mySemesterReports.map((r) => r.month).filter(Boolean));
   if (!distinctMonths.has(month) && distinctMonths.size >= CYCLE_MAX_MONTHS) {
     showToast(
       "3-Month Cycle Structure",
-      `Your 6 sessions must be submitted across ${CYCLE_MAX_MONTHS} months (${Array.from(distinctMonths).join(", ")}).`,
+      `Your 6 sessions per semester must be submitted across ${CYCLE_MAX_MONTHS} months (${Array.from(distinctMonths).join(", ")}).`,
       "warning"
     );
     return;
@@ -2484,13 +2911,18 @@ function renderAdminAll() {
   // 7. Render Portal & ARC Deadline Settings Panel
   renderAdminSettingsPanel();
 
-  // 8. Populate Mentor Select Dropdown in Add Person Modal
+  // 8. Populate Mentor Select Dropdown in Add Person Modal (including Department)
   const mentorSelect = document.getElementById("roster-mentor-id");
   if (mentorSelect) {
     mentorSelect.innerHTML =
-      `<option value="">Choose mentor (unassigned)...</option>` +
+      `<option value="">Auto-assign by Department (or leave Unassigned)...</option>` +
       adminRosterMentors
-        .map((m) => `<option value="${escapeHtml(m._id)}">${escapeHtml(m.name || m._id)} (${escapeHtml(m._id)})</option>`)
+        .map(
+          (m) =>
+            `<option value="${escapeHtml(m._id)}">${escapeHtml(m.name || m._id)} (${escapeHtml(m._id)}${
+              m.department ? ` · ${escapeHtml(m.department)}` : ""
+            })</option>`
+        )
         .join("");
   }
 }
@@ -2712,15 +3144,29 @@ document.getElementById("btn-broadcast-arc-warning")?.addEventListener("click", 
   try {
     await new Promise((resolve) => setTimeout(resolve, 450));
 
-    const pendingCount = getPendingArcStudentsCount();
+    const pendingStudents = adminRosterStudents.filter((stu) => {
+      const cl = adminChecklistsMap[stu._id];
+      const arcDoc = cl?.taskDocs?.arc;
+      const isApproved = arcDoc?.status === "approved";
+      const isPendingUpload = Boolean(arcDoc && arcDoc.dataUrl && arcDoc.status === "pending");
+      const isChecked = Boolean(cl?.tasks?.arc) && arcDoc?.status !== "rejected";
+      return !isApproved && !isPendingUpload && !isChecked;
+    });
+    const pendingCount = pendingStudents.length;
     const nowIso = new Date().toISOString();
+    const dlInfo = computeArcDeadlineInfo(portalConfigCache?.arcDeadline, portalConfigCache?.arcCustomMessage);
 
-    // Persist deduplicated warning state in portalConfig (never floods announcements with duplicates)
+    // System A: High-Priority Urgent Institutional Warning (triggers blocking modal + Web Push on pending Students)
     await savePortalConfig({
       arcWarning: {
+        id: `arc_warn_${Date.now()}`,
         active: true,
         lastSentAt: nowIso,
-        lastRecipientCount: pendingCount
+        targetStudentIds: pendingStudents.map((s) => s._id),
+        lastRecipientCount: pendingCount,
+        customMessage: dlInfo.personalizedMessage,
+        deadlineFormatted: dlInfo.formattedDue,
+        acknowledgedBy: []
       }
     });
 
@@ -2732,11 +3178,10 @@ document.getElementById("btn-broadcast-arc-warning")?.addEventListener("click", 
     const confirmTitle = document.getElementById("arc-warning-confirm-title");
     const confirmMsg = document.getElementById("arc-warning-confirm-message");
     const confirmMeta = document.getElementById("arc-warning-confirm-meta");
-    const dlInfo = computeArcDeadlineInfo(portalConfigCache?.arcDeadline, portalConfigCache?.arcCustomMessage);
     if (confirmTitle) confirmTitle.textContent = "✅ Urgent Reminder Dispatched";
     if (confirmMsg) confirmMsg.textContent = feedbackText;
     if (confirmMeta) {
-      confirmMeta.textContent = `Personalized banner ("${dlInfo.personalizedMessage}") is active exclusively on pending Student dashboards. Mentors do not receive ARC alerts.`;
+      confirmMeta.textContent = `High-priority blocking popup & OS push notification ("${dlInfo.personalizedMessage}") dispatched strictly to pending Students requiring explicit acknowledgment. Mentors do not receive ARC alerts.`;
     }
     if (confirmModal) confirmModal.style.display = "flex";
   } catch (err) {
@@ -2747,7 +3192,118 @@ document.getElementById("btn-broadcast-arc-warning")?.addEventListener("click", 
   }
 });
 
-// ---------- PEOPLE OVERVIEW & INTERACTIVE ROSTER TABLE ----------
+// ---------- PEOPLE OVERVIEW, COLLAPSIBLE ACCORDION & DEPARTMENT FILTERING ----------
+function normalizeDepartmentKey(dept) {
+  return String(dept || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function formatDepartmentLabel(dept) {
+  const cleaned = String(dept || "").trim().replace(/\s+/g, " ");
+  return cleaned || "";
+}
+
+function syncPeopleRosterAccordionUI() {
+  const drawer = document.getElementById("detailed-roster-drawer");
+
+  if (drawer) {
+    drawer.hidden = !isPeopleRosterExpanded;
+    drawer.style.display = isPeopleRosterExpanded ? "block" : "none";
+  }
+
+  ["students", "mentors", "unassigned"].forEach((tabKey) => {
+    const chevronEl = document.getElementById(`people-chevron-${tabKey}`);
+    if (!chevronEl) return;
+    if (activePeopleTab === tabKey) {
+      chevronEl.textContent = isPeopleRosterExpanded ? "▲" : "▼";
+      chevronEl.style.display = "inline-block";
+    } else {
+      chevronEl.textContent = "";
+      chevronEl.style.display = "none";
+    }
+  });
+
+  document.querySelectorAll("[data-people-tab]").forEach((btn) => {
+    const tabKey = btn.getAttribute("data-people-tab");
+    const isActiveTab = tabKey === activePeopleTab;
+    const isTabActiveAndOpen = isActiveTab && isPeopleRosterExpanded;
+    btn.classList.toggle("active", isActiveTab);
+    btn.setAttribute("aria-expanded", String(isTabActiveAndOpen));
+  });
+}
+
+function setPeopleRosterExpanded(nextExpanded) {
+  isPeopleRosterExpanded = Boolean(nextExpanded);
+  syncPeopleRosterAccordionUI();
+}
+
+function togglePeopleRosterAccordion(targetTab = null) {
+  if (targetTab && targetTab !== activePeopleTab) {
+    activePeopleTab = targetTab;
+    selectedRosterIds.clear();
+    isPeopleRosterExpanded = true;
+  } else {
+    isPeopleRosterExpanded = !isPeopleRosterExpanded;
+  }
+  syncPeopleRosterAccordionUI();
+  renderAdminAll();
+}
+
+function syncDepartmentFilterDropdown() {
+  const deptSelect = document.getElementById("admin-filter-department");
+  if (!deptSelect) return;
+
+  const deptLabelMap = new Map();
+  const deptCountMap = new Map();
+
+  const activeMentorIdSet = getActiveMentorIdSet(adminRosterMentors);
+  let sourceList = adminRosterStudents;
+  if (activePeopleTab === "mentors") {
+    sourceList = adminRosterMentors;
+  } else if (activePeopleTab === "unassigned") {
+    sourceList = adminRosterStudents.filter((s) => isStudentUnassigned(s, activeMentorIdSet));
+  }
+
+  // Collect all departments across both students and mentors so dropdown always shows available departments
+  [...adminRosterStudents, ...adminRosterMentors].forEach((person) => {
+    const label = formatDepartmentLabel(person?.department);
+    if (!label) return;
+    const key = normalizeDepartmentKey(label);
+    if (!deptLabelMap.has(key)) {
+      deptLabelMap.set(key, label);
+      deptCountMap.set(key, 0);
+    }
+  });
+
+  sourceList.forEach((person) => {
+    const label = formatDepartmentLabel(person?.department);
+    if (!label) return;
+    const key = normalizeDepartmentKey(label);
+    deptCountMap.set(key, (deptCountMap.get(key) || 0) + 1);
+  });
+
+  if (adminDepartmentFilter !== "all" && !deptLabelMap.has(adminDepartmentFilter)) {
+    adminDepartmentFilter = "all";
+  }
+
+  const sortedDeptEntries = Array.from(deptLabelMap.entries()).sort((a, b) =>
+    a[1].localeCompare(b[1])
+  );
+
+  deptSelect.innerHTML =
+    `<option value="all" ${adminDepartmentFilter === "all" ? "selected" : ""}>All Departments</option>` +
+    sortedDeptEntries
+      .map(([key, label]) => {
+        const count = deptCountMap.get(key) || 0;
+        return `<option value="${escapeHtml(key)}" ${
+          adminDepartmentFilter === key ? "selected" : ""
+        }>${escapeHtml(label)} (${count})</option>`;
+      })
+      .join("");
+}
+
 function renderAdminPeopleOverview(avgCompletionPct, unassignedStudents) {
   const tabStuCount = document.getElementById("people-tab-students-count");
   const tabMenCount = document.getElementById("people-tab-mentors-count");
@@ -2793,6 +3349,7 @@ function renderAdminPeopleOverview(avgCompletionPct, unassignedStudents) {
     }
   }
 
+  syncPeopleRosterAccordionUI();
   renderDetailedRosterTable();
 }
 
@@ -2808,7 +3365,20 @@ function renderDetailedRosterTable() {
   const deleteLabel = document.getElementById("label-delete-selected-students");
   if (!listEl) return;
 
+  syncDepartmentFilterDropdown();
+
+  if (!isPeopleRosterExpanded) {
+    listEl.innerHTML = "";
+    return;
+  }
+
   const q = (document.getElementById("admin-search-students")?.value || "").trim().toLowerCase();
+  const deptSelectVal = (
+    document.getElementById("admin-filter-department")?.value ||
+    adminDepartmentFilter ||
+    "all"
+  ).toLowerCase();
+  adminDepartmentFilter = deptSelectVal;
 
   const activeMentorIdSet = getActiveMentorIdSet(adminRosterMentors);
   let records = [];
@@ -2821,12 +3391,20 @@ function renderDetailedRosterTable() {
   }
 
   const filtered = records.filter((r) => {
+    if (deptSelectVal !== "all") {
+      const personDeptKey = normalizeDepartmentKey(r.department);
+      if (personDeptKey !== deptSelectVal) return false;
+    }
     if (!q) return true;
     const isUnassignedRow = r.role === "student" && isStudentUnassigned(r, activeMentorIdSet);
     const effectiveMentorId = isUnassignedRow ? "unassigned" : String(r.mentorId || "").toLowerCase();
+    const deptText = String(r.department || "").toLowerCase();
+    const emailText = String(r.email || "").toLowerCase();
     return (
       String(r._id || "").toLowerCase().includes(q) ||
       String(r.name || "").toLowerCase().includes(q) ||
+      deptText.includes(q) ||
+      emailText.includes(q) ||
       effectiveMentorId.includes(q)
     );
   });
@@ -2852,8 +3430,14 @@ function renderDetailedRosterTable() {
   }
 
   if (activePeopleTab === "mentors") {
-    const activeCycleMonths = buildActiveCycleMonths(adminReportsList);
-    const currentFocusMonth = adminSelectedReportMonth || activeCycleMonths[0];
+    const checkedMonths = getActiveCheckedMonthsForSemester(
+      adminSelectedSemester,
+      adminSelectedAcademicYear,
+      adminReportsList
+    );
+    const activeSemesterMonths = getSemesterMonths(adminSelectedSemester, adminSelectedAcademicYear);
+    const currentFocusMonth =
+      adminSelectedReportMonth || checkedMonths[0] || activeSemesterMonths[0];
     listEl.innerHTML = `
       <table class="clean-admin-table">
         <thead>
@@ -2876,6 +3460,7 @@ function renderDetailedRosterTable() {
               const monthAgg = getMentorMonthAggregatedData(m._id, currentFocusMonth, adminReportsList);
               const mFiles = monthAgg.filesCount;
               const isChecked = selectedRosterIds.has(m._id) ? "checked" : "";
+              const mDeptLabel = formatDepartmentLabel(m.department);
               return `
                 <tr>
                   <td><input type="checkbox" class="roster-row-cb" data-id="${escapeHtml(m._id)}" ${isChecked} /></td>
@@ -2884,7 +3469,9 @@ function renderDetailedRosterTable() {
                       <div class="table-avatar-sm">${escapeHtml(getInitials(m.name || m._id))}</div>
                       <div class="table-student-info">
                         <strong>${escapeHtml(m.name || m._id)}</strong>
-                        <span>Mentor</span>
+                        <span class="dept-badge-pill ${mDeptLabel ? "" : "unassigned-dept"}">
+                          🏛️ ${escapeHtml(mDeptLabel || "General Mentor")}
+                        </span>
                       </div>
                     </div>
                   </td>
@@ -2918,8 +3505,8 @@ function renderDetailedRosterTable() {
         <thead>
           <tr>
             <th style="width: 38px;"><input type="checkbox" id="roster-select-all-cb" /></th>
-            <th>STUDENT</th>
-            <th>ID & INITIAL PASSWORD</th>
+            <th>STUDENT &amp; DEPARTMENT</th>
+            <th>ID &amp; INITIAL PASSWORD</th>
             <th>ASSIGNED MENTOR</th>
             <th>PROGRESS</th>
             <th>ARC STATUS</th>
@@ -2934,27 +3521,46 @@ function renderDetailedRosterTable() {
               const pct = Math.round((doneCount / CORE_TASKS.length) * 100);
               const arcStatus = cl.taskDocs?.arc?.status || (cl.tasks?.arc ? "approved" : "none");
               const isChecked = selectedRosterIds.has(s._id) ? "checked" : "";
+              const sDeptLabel = formatDepartmentLabel(s.department);
+              const sDeptKey = normalizeDepartmentKey(sDeptLabel);
+
+              // Sort same-department mentors first in the inline selector
+              const sortedMentorsForStudent = [...adminRosterMentors].sort((a, b) => {
+                const aSame = sDeptKey && normalizeDepartmentKey(a.department) === sDeptKey ? 0 : 1;
+                const bSame = sDeptKey && normalizeDepartmentKey(b.department) === sDeptKey ? 0 : 1;
+                if (aSame !== bSame) return aSame - bSame;
+                return String(a.name || a._id).localeCompare(String(b.name || b._id));
+              });
 
               const mentorOptions =
                 `<option value="">-- Unassigned --</option>` +
-                adminRosterMentors
-                  .map(
-                    (m) =>
-                      `<option value="${escapeHtml(m._id)}" ${
-                        String(s.mentorId || "").toLowerCase() === String(m._id).toLowerCase() ? "selected" : ""
-                      }>${escapeHtml(m.name || m._id)} (${escapeHtml(m._id)})</option>`
-                  )
+                sortedMentorsForStudent
+                  .map((m) => {
+                    const mDept = formatDepartmentLabel(m.department);
+                    return `<option value="${escapeHtml(m._id)}" ${
+                      String(s.mentorId || "").toLowerCase() === String(m._id).toLowerCase() ? "selected" : ""
+                    }>${escapeHtml(m.name || m._id)} (${escapeHtml(m._id)}${
+                      mDept ? ` · ${escapeHtml(mDept)}` : ""
+                    })</option>`;
+                  })
                   .join("");
 
               return `
-                <tr>
+                <tr data-student-row-id="${escapeHtml(s._id)}" data-student-department="${escapeHtml(sDeptLabel)}">
                   <td><input type="checkbox" class="roster-row-cb" data-id="${escapeHtml(s._id)}" ${isChecked} /></td>
                   <td>
                     <div class="table-student-cell">
                       <div class="table-avatar-sm">${escapeHtml(getInitials(s.name || s._id))}</div>
                       <div class="table-student-info">
                         <strong>${escapeHtml(s.name || s._id)}</strong>
-                        <span>Student</span>
+                        <span class="dept-badge-pill ${sDeptLabel ? "" : "unassigned-dept"}">
+                          🎓 ${escapeHtml(sDeptLabel || "Unassigned Dept")}
+                        </span>
+                        ${
+                          s.email
+                            ? `<span style="font-size: 11px; color: #64748b;">${escapeHtml(s.email)}</span>`
+                            : ""
+                        }
                       </div>
                     </div>
                   </td>
@@ -2979,7 +3585,6 @@ function renderDetailedRosterTable() {
                   </td>
                   <td>
                     <div class="table-action-btns">
-                      <button type="button" class="btn-table-action" data-chat-person="${escapeHtml(s._id)}" data-chat-name="${escapeHtml(s.name || s._id)}">💬</button>
                       <button type="button" class="btn-table-action" style="color: #dc2626;" data-delete-person="${escapeHtml(s._id)}">🗑️</button>
                     </div>
                   </td>
@@ -3025,10 +3630,15 @@ function renderDetailedRosterTable() {
     });
   });
 
-  // Bind Chat & Single Delete
+  // Bind Mentor Chat (Admin -> Mentor ONLY) & Single Delete
   listEl.querySelectorAll("[data-chat-person]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      openChatModal(btn.getAttribute("data-chat-person"), btn.getAttribute("data-chat-name"), "Direct Message");
+      const targetId = btn.getAttribute("data-chat-person");
+      if (!isMessengerPairAuthorized(currentRole, currentUserId, targetId)) {
+        showToast("Access Restricted", "Admins can only message Mentors in Messenger.", "error");
+        return;
+      }
+      openChatModal(targetId, btn.getAttribute("data-chat-name"), "Mentor");
     });
   });
 
@@ -3055,25 +3665,20 @@ function renderDetailedRosterTable() {
   });
 }
 
-// People Tabs Switching
+// People Tabs Switching & Single-Tab Accordion Toggle ("Students [X] ▼/▲", "Mentors [X]", "Unassigned [X]")
 document.querySelectorAll("[data-people-tab]").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll("[data-people-tab]").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    activePeopleTab = btn.getAttribute("data-people-tab") || "students";
-    selectedRosterIds.clear();
-    renderAdminAll();
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    const clickedTab = btn.getAttribute("data-people-tab") || "students";
+    togglePeopleRosterAccordion(clickedTab);
   });
 });
 
-document.getElementById("btn-toggle-detailed-roster")?.addEventListener("click", () => {
-  const drawer = document.getElementById("detailed-roster-drawer");
-  if (drawer) {
-    drawer.style.display = drawer.style.display === "none" ? "block" : "none";
-  }
-});
-
 document.getElementById("admin-search-students")?.addEventListener("input", renderDetailedRosterTable);
+document.getElementById("admin-filter-department")?.addEventListener("change", (e) => {
+  adminDepartmentFilter = (e.target?.value || "all").toLowerCase();
+  renderDetailedRosterTable();
+});
 
 // Bulk Delete Selected Students / Mentors
 document.getElementById("btn-delete-selected-students")?.addEventListener("click", async () => {
@@ -3113,14 +3718,14 @@ document.getElementById("btn-attention-reports")?.addEventListener("click", () =
 });
 
 document.getElementById("btn-attention-unassigned")?.addEventListener("click", () => {
-  const unassignedTab = document.querySelector('[data-people-tab="unassigned"]');
-  if (unassignedTab) unassignedTab.click();
-  const drawer = document.getElementById("detailed-roster-drawer");
-  if (drawer) drawer.style.display = "block";
+  activePeopleTab = "unassigned";
+  selectedRosterIds.clear();
+  setPeopleRosterExpanded(true);
+  renderAdminAll();
   document.getElementById("admin-people-card")?.scrollIntoView({ behavior: "smooth" });
 });
 
-// ---------- ADD PERSON MODAL (STUDENT OR MENTOR) ----------
+// ---------- ADD PERSON MODAL (STUDENT OR MENTOR WITH DEPARTMENT) ----------
 ["btn-open-add-person", "btn-open-add-person-top"].forEach((id) => {
   document.getElementById(id)?.addEventListener("click", () => {
     const modal = document.getElementById("add-person-modal");
@@ -3158,17 +3763,53 @@ document.getElementById("add-person-form")?.addEventListener("submit", async (e)
   const role = document.getElementById("roster-role")?.value || "student";
   const userId = (document.getElementById("roster-id")?.value || "").trim();
   const name = (document.getElementById("roster-name")?.value || "").trim();
+  const department = formatDepartmentLabel(document.getElementById("roster-department")?.value || "");
+  const email = (document.getElementById("roster-email")?.value || "").trim();
   const phone = (document.getElementById("roster-phone")?.value || "").trim();
-  const mentorId = (document.getElementById("roster-mentor-id")?.value || "").trim();
+  let mentorId = (document.getElementById("roster-mentor-id")?.value || "").trim();
 
   if (!userId || !name) {
     showToast("Missing Fields", "Please enter both User ID and Full Name.", "error");
     return;
   }
 
+  let deptWarningMsg = "";
+  if (role === "student") {
+    const stuDeptKey = normalizeDepartmentKey(department);
+    if (mentorId) {
+      const targetMentor = adminRosterMentors.find(
+        (m) => String(m._id || "").toLowerCase() === mentorId.toLowerCase()
+      );
+      const menDeptKey = normalizeDepartmentKey(targetMentor?.department);
+      if (targetMentor && stuDeptKey && menDeptKey && stuDeptKey !== menDeptKey) {
+        deptWarningMsg = `Note: ${targetMentor.name || targetMentor._id} belongs to ${targetMentor.department}, while ${name} is in ${department}.`;
+      }
+    } else if (stuDeptKey) {
+      // Auto-assign to least-loaded mentor in the same department if mentorId left blank
+      const matchingMentors = adminRosterMentors.filter(
+        (m) => normalizeDepartmentKey(m.department) === stuDeptKey
+      );
+      if (matchingMentors.length > 0) {
+        matchingMentors.sort((a, b) => {
+          const loadA = adminRosterStudents.filter(
+            (s) => String(s.mentorId || "").toLowerCase() === String(a._id).toLowerCase()
+          ).length;
+          const loadB = adminRosterStudents.filter(
+            (s) => String(s.mentorId || "").toLowerCase() === String(b._id).toLowerCase()
+          ).length;
+          if (loadA !== loadB) return loadA - loadB;
+          return String(a._id).localeCompare(String(b._id));
+        });
+        mentorId = matchingMentors[0]._id;
+      }
+    }
+  }
+
   const record = {
     role,
     name,
+    department,
+    email,
     phone: role === "mentor" ? phone : "",
     mentorId: role === "student" ? mentorId : "",
     createdAt: new Date().toISOString()
@@ -3176,7 +3817,7 @@ document.getElementById("add-person-form")?.addEventListener("submit", async (e)
 
   await dbSetDoc("roster", userId, record);
   if (role === "mentor") {
-    await dbSetDoc("mentors", userId, { name, phone });
+    await dbSetDoc("mentors", userId, { name, phone, department, email });
   } else {
     const existingCl = await dbGetDoc("checklists", userId);
     if (!existingCl) {
@@ -3189,19 +3830,576 @@ document.getElementById("add-person-form")?.addEventListener("submit", async (e)
   if (modal) modal.style.display = "none";
 
   activePeopleTab = role === "mentor" ? "mentors" : "students";
-  document.querySelectorAll("[data-people-tab]").forEach((b) => {
-    b.classList.toggle("active", b.getAttribute("data-people-tab") === activePeopleTab);
-  });
-
   await loadAdminDashboard();
-  showToast(
-    `Added ${role === "mentor" ? "Mentor" : "Student"}: ${name}`,
-    `ID: ${userId} · Initial Login Password: ${getDefaultPasswordForId(userId)}`,
-    "success"
-  );
+
+  if (deptWarningMsg) {
+    showToast("Department Mismatch Warning", deptWarningMsg, "warning");
+  } else {
+    showToast(
+      `Added ${role === "mentor" ? "Mentor" : "Student"}: ${name}`,
+      `ID: ${userId}${department ? ` · Dept: ${department}` : ""}${
+        role === "student" ? ` · Mentor: ${mentorId || "Unassigned"}` : ""
+      }`,
+      "success"
+    );
+  }
 });
 
-// ---------- SMART CSV IMPORT, EXPORT & TEMPLATE DOWNLOAD ----------
+// ---------- DUAL-ROLE CSV IMPORT (STUDENTS | MENTORS), HEADER AUTO-DETECTION & DEPARTMENT ROUND-ROBIN ----------
+function syncImportRosterCardUI() {
+  const isMentors = activeImportRole === "mentors";
+
+  const stuBtn = document.getElementById("import-role-btn-students");
+  const menBtn = document.getElementById("import-role-btn-mentors");
+  if (stuBtn) {
+    stuBtn.classList.toggle("active", !isMentors);
+    stuBtn.setAttribute("aria-selected", String(!isMentors));
+  }
+  if (menBtn) {
+    menBtn.classList.toggle("active", isMentors);
+    menBtn.setAttribute("aria-selected", String(isMentors));
+  }
+
+  document.querySelectorAll("[data-import-role]").forEach((btn) => {
+    const roleAttr = btn.getAttribute("data-import-role");
+    const isActive = roleAttr === activeImportRole;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", String(isActive));
+  });
+
+  const titleEl = document.getElementById("import-roster-title");
+  const subEl = document.getElementById("import-roster-sub");
+  const schemaHintEl = document.getElementById("csv-schema-hint");
+  const templateLinkEl = document.getElementById("link-download-csv-template");
+
+  if (isMentors) {
+    if (titleEl) titleEl.textContent = "Import Mentor Roster";
+    if (subEl) subEl.textContent = "Upload a CSV file to add or update mentors in bulk.";
+    if (schemaHintEl) schemaHintEl.textContent = "mentor_id,name,department,phone";
+    if (templateLinkEl) templateLinkEl.textContent = "Download Mentor CSV Template";
+  } else {
+    if (titleEl) titleEl.textContent = "Import Student Roster";
+    if (subEl) subEl.textContent = "Upload a CSV file to add or update international students in bulk.";
+    if (schemaHintEl) schemaHintEl.textContent = "student_id,name,department,mentor_id";
+    if (templateLinkEl) templateLinkEl.textContent = "Download Student CSV Template";
+  }
+}
+
+function setImportRosterRole(role) {
+  activeImportRole = role === "mentors" ? "mentors" : "students";
+  syncImportRosterCardUI();
+}
+
+function getCsvTemplateForRole(role = activeImportRole) {
+  if (role === "mentors") {
+    return [
+      "mentor_id,name,department,phone",
+      "m01,Minjun Kim,Global Business,01012345678",
+      "m02,Seoyeon Park,Computer Science,01023456789",
+      "m03,Daniel Choi,Media & Communication,01034567890"
+    ].join("\n");
+  }
+  return [
+    "student_id,name,department,mentor_id",
+    "a2024691204,Amr Hassan,Global Business,",
+    "a2024691205,Linh Nguyen,Computer Science,",
+    "a2024691206,Sara Lee,Media & Communication,"
+  ].join("\n");
+}
+
+function isValidMentorPhone(phone) {
+  return /^010\d{8}$/.test(String(phone || "").trim());
+}
+
+function parseCsvRow(line) {
+  const result = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      result.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur.trim());
+  return result.map((c) => c.replace(/^"|"$/g, "").trim());
+}
+
+function openCsvImportFeedbackModal(summary) {
+  if (!summary) return;
+  const modalEl = document.getElementById("csv-import-feedback-modal");
+  const titleEl = document.getElementById("csv-feedback-modal-title");
+  const msgEl = document.getElementById("csv-feedback-modal-message");
+  const metaEl = document.getElementById("csv-feedback-modal-meta");
+
+  if (titleEl) {
+    titleEl.textContent =
+      summary.detectedRole === "mentors" ? "Mentor Roster Import Complete" : "Student Roster Import Complete";
+  }
+  if (msgEl) {
+    msgEl.textContent = summary.confirmationMessage || "";
+  }
+  if (metaEl) {
+    const warnings = [
+      ...(summary.departmentMismatchWarnings || []),
+      ...(summary.phoneValidationErrors || [])
+    ];
+    const deptItems = Object.entries(summary.departmentBreakdown || {})
+      .map(([dept, info]) =>
+        summary.detectedRole === "mentors"
+          ? `${escapeHtml(dept)}: ${info.total} mentor(s)`
+          : `${escapeHtml(dept)}: ${info.assigned}/${info.total} assigned`
+      )
+      .join(" · ");
+
+    const warningsHtml =
+      warnings.length > 0
+        ? `<ul class="csv-import-warnings-list" style="margin-top: 8px;">${warnings
+            .map((w) => `<li>${escapeHtml(w)}</li>`)
+            .join("")}</ul>`
+        : "";
+
+    metaEl.innerHTML = `${deptItems ? `<div>${deptItems}</div>` : ""}${warningsHtml}`;
+  }
+  if (modalEl) {
+    modalEl.style.display = "flex";
+  }
+}
+
+function closeCsvImportFeedbackModal() {
+  const modalEl = document.getElementById("csv-import-feedback-modal");
+  if (modalEl) modalEl.style.display = "none";
+}
+
+function renderCsvImportSummaryBanner(summary) {
+  const bannerEl = document.getElementById("csv-import-summary-banner");
+  if (!bannerEl) return;
+  if (!summary) {
+    bannerEl.style.display = "none";
+    bannerEl.innerHTML = "";
+    return;
+  }
+
+  const allWarnings = [
+    ...(summary.departmentMismatchWarnings || []),
+    ...(summary.phoneValidationErrors || [])
+  ];
+  const hasWarnings = allWarnings.length > 0;
+  bannerEl.className = `csv-import-summary-banner${hasWarnings ? " has-warnings" : ""}`;
+  bannerEl.style.display = "block";
+
+  const deptBreakdownItems = Object.entries(summary.departmentBreakdown || {})
+    .map(([dept, info]) =>
+      summary.detectedRole === "mentors"
+        ? `${escapeHtml(dept)}: ${info.total} mentor(s)`
+        : `${escapeHtml(dept)}: ${info.assigned}/${info.total} assigned`
+    )
+    .join(" · ");
+
+  const warningListHtml = hasWarnings
+    ? `<ul class="csv-import-warnings-list">
+        ${allWarnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}
+      </ul>`
+    : "";
+
+  bannerEl.innerHTML = `
+    <strong>${escapeHtml(summary.confirmationMessage || "Bulk CSV Import Summary")}</strong>
+    ${
+      summary.detectedRole === "students"
+        ? `<div>
+            Auto-assigned by Department (Round-Robin): <b>${summary.autoAssignedCount}</b> ·
+            Verified Explicit Matches: <b>${summary.explicitValidAssignedCount}</b> ·
+            Unassigned Fallback: <b>${summary.unassignedFallbackCount}</b>
+            ${hasWarnings ? ` · Warnings: <b>${allWarnings.length}</b>` : ""}
+          </div>`
+        : hasWarnings
+          ? `<div>Validation Warnings: <b>${allWarnings.length}</b></div>`
+          : ""
+    }
+    ${deptBreakdownItems ? `<div style="font-size: 11.5px; margin-top: 3px; opacity: 0.9;">${deptBreakdownItems}</div>` : ""}
+    ${warningListHtml}
+  `;
+}
+
+// Header-Based Auto-Detection & Department-Matching Round-Robin Engine
+async function importRosterCsvText(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    throw new Error("The selected CSV file has no rows.");
+  }
+
+  const firstRowCols = parseCsvRow(lines[0]);
+  const firstRowLower = firstRowCols.map((c) => c.toLowerCase().trim());
+  const isHeaderRow =
+    firstRowLower.includes("student_id") ||
+    firstRowLower.includes("mentor_id") ||
+    firstRowLower.includes("phone") ||
+    firstRowLower.includes("department") ||
+    firstRowLower.includes("id") ||
+    firstRowLower.includes("role") ||
+    (firstRowLower[1] === "name" && firstRowLower.length >= 2);
+
+  const headerMap = {};
+  if (isHeaderRow) {
+    firstRowLower.forEach((h, idx) => {
+      headerMap[h] = idx;
+    });
+  }
+
+  // Header-Based Auto-Detection:
+  // 1. If headers include `phone` and `mentor_id` (and not `student_id`) -> Mentors CSV
+  // 2. If headers include `student_id` and `department` -> Students CSV
+  const isMentorCsvHeader =
+    isHeaderRow &&
+    "mentor_id" in headerMap &&
+    "phone" in headerMap &&
+    !("student_id" in headerMap);
+  const isStudentCsvHeader =
+    isHeaderRow && ("student_id" in headerMap || ("department" in headerMap && !isMentorCsvHeader));
+
+  const startIdx = isHeaderRow ? 1 : 0;
+  const parsedMentors = [];
+  const parsedStudents = [];
+  const phoneValidationErrors = [];
+
+  for (let i = startIdx; i < lines.length; i++) {
+    const cols = parseCsvRow(lines[i]);
+    if (cols.length < 2) continue;
+
+    // Case 1: Header-Detected Mentor CSV (`mentor_id,name,department,phone`)
+    if (isMentorCsvHeader) {
+      const idIdx = headerMap.mentor_id ?? headerMap.id ?? 0;
+      const nameIdx = headerMap.name ?? 1;
+      const deptIdx = headerMap.department ?? headerMap.dept ?? 2;
+      const phoneIdx = headerMap.phone ?? 3;
+      const emailIdx = headerMap.email;
+
+      const id = (cols[idIdx] || "").trim();
+      if (!id) continue;
+      const name = (cols[nameIdx] || id).trim();
+      const department = deptIdx !== undefined ? formatDepartmentLabel(cols[deptIdx] || "") : "";
+      const phone = (cols[phoneIdx] || "").trim();
+      const email = emailIdx !== undefined ? (cols[emailIdx] || "").trim() : "";
+
+      if (!isValidMentorPhone(phone)) {
+        phoneValidationErrors.push(
+          `Mentor ${name} (${id}): invalid phone "${phone}". Phone must be an 11-digit continuous number starting with 010 (010XXXXXXXX).`
+        );
+        continue;
+      }
+
+      parsedMentors.push({ id, name, email, department, phone });
+      continue;
+    }
+
+    // Case 2: Header-Detected Student CSV (`student_id,name,department,mentor_id` or `student_id,name,email,department,mentor_id`)
+    if (isStudentCsvHeader) {
+      const roleColIdx = headerMap.role;
+      const rowRole =
+        roleColIdx !== undefined && (cols[roleColIdx] || "").toLowerCase() === "mentor"
+          ? "mentor"
+          : "student";
+      const idIdx = headerMap.student_id ?? headerMap.id ?? 0;
+      const nameIdx = headerMap.name ?? 1;
+      const emailIdx = headerMap.email;
+      const deptIdx = headerMap.department ?? headerMap.dept;
+      const mentorIdx = headerMap.mentor_id ?? headerMap.mentorid ?? headerMap.mentorid_or_phone;
+      const phoneIdx = headerMap.phone;
+
+      const id = (cols[idIdx] || "").trim();
+      if (!id) continue;
+      const name = (cols[nameIdx] || id).trim();
+      const email = emailIdx !== undefined ? (cols[emailIdx] || "").trim() : "";
+      const department = deptIdx !== undefined ? formatDepartmentLabel(cols[deptIdx] || "") : "";
+
+      if (rowRole === "mentor") {
+        const phone = phoneIdx !== undefined ? (cols[phoneIdx] || "").trim() : "";
+        if (phone && !isValidMentorPhone(phone)) {
+          phoneValidationErrors.push(
+            `Mentor ${name} (${id}): invalid phone "${phone}". Phone must be an 11-digit continuous number starting with 010 (010XXXXXXXX).`
+          );
+          continue;
+        }
+        parsedMentors.push({ id, name, email, department, phone });
+      } else {
+        const requestedMentorId = mentorIdx !== undefined ? (cols[mentorIdx] || "").trim() : "";
+        parsedStudents.push({ id, name, email, department, requestedMentorId });
+      }
+      continue;
+    }
+
+    // Case 3: Role-first fallback format: Role,ID,Name,Department,Phone_or_MentorID
+    const firstLower = (cols[0] || "").toLowerCase();
+    if (firstLower === "mentor" || firstLower === "student") {
+      const id = cols[1] || "";
+      if (!id) continue;
+      const name = cols[2] || id;
+      if (firstLower === "mentor") {
+        const col3 = cols[3] || "";
+        const col4 = cols[4] || "";
+        const isCol3Phone = /^[0-9+\-() ]{7,}$/.test(col3);
+        const phone = (isCol3Phone ? col3 : col4).trim();
+        const department = formatDepartmentLabel(isCol3Phone ? col4 : col3);
+        parsedMentors.push({ id, name, email: "", department, phone });
+      } else {
+        let department = "";
+        let requestedMentorId = "";
+        if (cols.length >= 5) {
+          department = formatDepartmentLabel(cols[3] || "");
+          requestedMentorId = cols[4] || "";
+        } else {
+          requestedMentorId = cols[3] || "";
+        }
+        parsedStudents.push({ id, name, email: "", department, requestedMentorId });
+      }
+      continue;
+    }
+
+    // Case 4: Positional fallback based on activeImportRole
+    const id = cols[0] || "";
+    if (!id) continue;
+    const name = cols[1] || id;
+    if (activeImportRole === "mentors" && cols.length >= 4 && isValidMentorPhone(cols[3])) {
+      parsedMentors.push({
+        id,
+        name,
+        email: "",
+        department: formatDepartmentLabel(cols[2] || ""),
+        phone: cols[3].trim()
+      });
+    } else if (cols.length >= 5) {
+      parsedStudents.push({
+        id,
+        name,
+        email: cols[2] || "",
+        department: formatDepartmentLabel(cols[3] || ""),
+        requestedMentorId: cols[4] || ""
+      });
+    } else if (cols.length >= 4) {
+      parsedStudents.push({
+        id,
+        name,
+        email: "",
+        department: formatDepartmentLabel(cols[2] || ""),
+        requestedMentorId: cols[3] || ""
+      });
+    } else {
+      parsedStudents.push({
+        id,
+        name,
+        email: "",
+        department: "",
+        requestedMentorId: cols[2] || ""
+      });
+    }
+  }
+
+  const departmentBreakdown = {};
+  const mentorDepartmentsSet = new Set();
+
+  // Pass 1: Persist any mentors included in this CSV and build the active mentor map
+  let importedMentors = 0;
+  for (const m of parsedMentors) {
+    const deptLabel = formatDepartmentLabel(m.department);
+    const deptKey = normalizeDepartmentKey(deptLabel);
+    if (deptKey) {
+      mentorDepartmentsSet.add(deptKey);
+    }
+    const deptDisplay = deptLabel || "Unspecified Department";
+    if (isMentorCsvHeader) {
+      if (!departmentBreakdown[deptDisplay]) {
+        departmentBreakdown[deptDisplay] = { total: 0, assigned: 0, unassigned: 0 };
+      }
+      departmentBreakdown[deptDisplay].total++;
+    }
+
+    await dbSetDoc("roster", m.id, {
+      role: "mentor",
+      name: m.name || m.id,
+      email: m.email || "",
+      department: deptLabel,
+      phone: m.phone || "",
+      mentorId: "",
+      updatedAt: new Date().toISOString()
+    });
+    await dbSetDoc("mentors", m.id, {
+      name: m.name || m.id,
+      phone: m.phone || "",
+      department: deptLabel,
+      email: m.email || ""
+    });
+    importedMentors++;
+  }
+
+  const currentRoster = await dbGetAll("roster");
+  const mentorMap = new Map();
+  const deptPools = new Map(); // deptKey -> Array<mentorObj>
+  const rrPointers = new Map(); // deptKey -> round-robin index
+
+  currentRoster
+    .filter((r) => r && r.role === "mentor" && r._id)
+    .sort((a, b) => String(a._id).localeCompare(String(b._id)))
+    .forEach((m) => {
+      const mKey = String(m._id).toLowerCase();
+      mentorMap.set(mKey, m);
+      const dKey = normalizeDepartmentKey(m.department);
+      if (dKey) {
+        if (!deptPools.has(dKey)) {
+          deptPools.set(dKey, []);
+          rrPointers.set(dKey, 0);
+        }
+        deptPools.get(dKey).push(m);
+      }
+    });
+
+  // Helper: pick next mentor in department using balanced Round-Robin distribution
+  const pickRoundRobinMentorForDept = (deptKey) => {
+    const pool = deptKey ? deptPools.get(deptKey) : null;
+    if (!pool || pool.length === 0) return "";
+    const idx = rrPointers.get(deptKey) || 0;
+    const chosen = pool[idx % pool.length];
+    rrPointers.set(deptKey, idx + 1);
+    return chosen._id;
+  };
+
+  // Pass 2: Allocate and persist students
+  let importedStudents = 0;
+  let autoAssignedCount = 0;
+  let explicitValidAssignedCount = 0;
+  let unassignedFallbackCount = 0;
+  const departmentMismatchWarnings = [];
+
+  for (const stu of parsedStudents) {
+    const deptLabel = formatDepartmentLabel(stu.department);
+    const deptKey = normalizeDepartmentKey(deptLabel);
+    const deptDisplay = deptLabel || "Unspecified Department";
+    if (!departmentBreakdown[deptDisplay]) {
+      departmentBreakdown[deptDisplay] = { total: 0, assigned: 0, unassigned: 0 };
+    }
+    departmentBreakdown[deptDisplay].total++;
+
+    const reqMentorClean = normalizeMentorIdValue(stu.requestedMentorId);
+    let finalMentorId = "";
+
+    if (reqMentorClean) {
+      const targetMentor = mentorMap.get(reqMentorClean.toLowerCase());
+      if (!targetMentor) {
+        departmentMismatchWarnings.push(
+          `Student ${stu.name} (${stu.id}, ${deptDisplay}): specified mentor "${reqMentorClean}" does not exist.`
+        );
+        // Attempt department auto-match fallback; if no mentor in department, leave Unassigned
+        finalMentorId = pickRoundRobinMentorForDept(deptKey);
+        if (finalMentorId) autoAssignedCount++;
+        else unassignedFallbackCount++;
+      } else {
+        const mentorDeptLabel = formatDepartmentLabel(targetMentor.department);
+        const mentorDeptKey = normalizeDepartmentKey(mentorDeptLabel);
+
+        // Validate that specified mentor belongs to the student's department
+        if (deptKey && mentorDeptKey && deptKey !== mentorDeptKey) {
+          departmentMismatchWarnings.push(
+            `Department mismatch for ${stu.name} (${stu.id}): student is in "${deptLabel}", but mentor ${
+              targetMentor.name || targetMentor._id
+            } (${targetMentor._id}) belongs to "${mentorDeptLabel}".`
+          );
+          // Do not assign a mismatched-department mentor; auto-assign within student's department or fallback to Unassigned
+          finalMentorId = pickRoundRobinMentorForDept(deptKey);
+          if (finalMentorId) autoAssignedCount++;
+          else unassignedFallbackCount++;
+        } else {
+          finalMentorId = targetMentor._id;
+          explicitValidAssignedCount++;
+        }
+      }
+    } else {
+      // Blank mentor_id -> Automated Department-Matching Round-Robin Allocation
+      finalMentorId = pickRoundRobinMentorForDept(deptKey);
+      if (finalMentorId) {
+        autoAssignedCount++;
+      } else {
+        // Fallback / Unassigned: student's department has no registered mentors
+        unassignedFallbackCount++;
+      }
+    }
+
+    if (finalMentorId) {
+      departmentBreakdown[deptDisplay].assigned++;
+    } else {
+      departmentBreakdown[deptDisplay].unassigned++;
+    }
+
+    await dbSetDoc("roster", stu.id, {
+      role: "student",
+      name: stu.name || stu.id,
+      email: stu.email || "",
+      department: deptLabel,
+      phone: "",
+      mentorId: finalMentorId,
+      updatedAt: new Date().toISOString()
+    });
+
+    const existingCl = await dbGetDoc("checklists", stu.id);
+    if (!existingCl) {
+      await dbSetDoc("checklists", stu.id, { name: stu.name || stu.id, tasks: {}, taskDocs: {} });
+    }
+    importedStudents++;
+  }
+
+  const detectedRole =
+    isMentorCsvHeader || (importedMentors > 0 && importedStudents === 0) ? "mentors" : "students";
+  const mentorDepartmentsCount = mentorDepartmentsSet.size;
+  const confirmationMessage =
+    detectedRole === "mentors"
+      ? `Successfully imported ${importedMentors} Mentors across ${mentorDepartmentsCount} departments.`
+      : `Successfully imported ${importedStudents} Students. Auto-assigned ${autoAssignedCount} students to matching department mentors.`;
+
+  const summary = {
+    detectedRole,
+    importedStudents,
+    importedMentors,
+    mentorDepartmentsCount,
+    autoAssignedCount,
+    explicitValidAssignedCount,
+    unassignedFallbackCount,
+    departmentMismatchWarnings,
+    phoneValidationErrors,
+    departmentBreakdown,
+    confirmationMessage
+  };
+  lastCsvImportSummary = summary;
+  renderCsvImportSummaryBanner(summary);
+  openCsvImportFeedbackModal(summary);
+  return summary;
+}
+
+// Role Switcher Inside the Upload Card ([ Students ] | [ Mentors ])
+document.getElementById("import-role-btn-students")?.addEventListener("click", () => {
+  setImportRosterRole("students");
+});
+document.getElementById("import-role-btn-mentors")?.addEventListener("click", () => {
+  setImportRosterRole("mentors");
+});
+
+["csv-feedback-modal-close", "csv-feedback-modal-ok"].forEach((id) => {
+  document.getElementById(id)?.addEventListener("click", closeCsvImportFeedbackModal);
+});
+
+syncImportRosterCardUI();
+
 document.getElementById("btn-import-csv")?.addEventListener("click", () => {
   document.getElementById("roster-csv-input")?.click();
 });
@@ -3235,111 +4433,37 @@ document.getElementById("roster-csv-input")?.addEventListener("change", async (e
 async function processRosterCsvFile(file) {
   try {
     const text = await file.text();
-    const lines = text
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
+    const summary = await importRosterCsvText(text);
 
-    if (lines.length === 0) {
-      showToast("Empty CSV", "The selected CSV file has no rows.", "error");
-      return;
-    }
-
-    let importedStudents = 0;
-    let importedMentors = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-      const cols = lines[i].split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-      if (cols.length < 2) continue;
-
-      // Skip header row
-      const firstLower = cols[0].toLowerCase();
-      const secondLower = (cols[1] || "").toLowerCase();
-      if (
-        i === 0 &&
-        (firstLower === "role" || firstLower === "id" || firstLower === "student_id" || secondLower === "id" || secondLower === "name")
-      ) {
-        continue;
-      }
-
-      let role = "student";
-      let id = "";
-      let name = "";
-      let phone = "";
-      let mentorId = "";
-
-      // Auto-detect Format A: Role, ID, Name, MentorID_or_Phone
-      if (firstLower === "student" || firstLower === "mentor") {
-        role = firstLower;
-        id = cols[1] || "";
-        name = cols[2] || id;
-        if (role === "mentor") phone = cols[3] || "";
-        else mentorId = cols[3] || "";
-      } else {
-        // Format B: ID, Name, Role, Phone, MentorID (or ID, Name, MentorID)
-        id = cols[0] || "";
-        name = cols[1] || id;
-        const thirdLower = (cols[2] || "").toLowerCase();
-        if (thirdLower === "student" || thirdLower === "mentor") {
-          role = thirdLower;
-          phone = cols[3] || "";
-          mentorId = cols[4] || (role === "student" ? cols[3] || "" : "");
-        } else {
-          role = "student";
-          mentorId = cols[2] || "";
-        }
-      }
-
-      if (!id) continue;
-
-      const cleanedMentorId = role === "student" ? normalizeMentorIdValue(mentorId) : "";
-
-      await dbSetDoc("roster", id, {
-        role,
-        name: name || id,
-        phone: role === "mentor" ? phone : "",
-        mentorId: cleanedMentorId,
-        updatedAt: new Date().toISOString()
-      });
-
-      if (role === "mentor") {
-        await dbSetDoc("mentors", id, { name: name || id, phone });
-        importedMentors++;
-      } else {
-        const existingCl = await dbGetDoc("checklists", id);
-        if (!existingCl) {
-          await dbSetDoc("checklists", id, { name: name || id, tasks: {}, taskDocs: {} });
-        }
-        importedStudents++;
-      }
-    }
-
+    setImportRosterRole(summary.detectedRole);
     await loadAdminDashboard();
-    showToast(
-      "CSV Import Complete",
-      `Successfully imported ${importedStudents} students and ${importedMentors} mentors.`,
-      "success"
-    );
+
+    const totalWarnings =
+      (summary.departmentMismatchWarnings?.length || 0) + (summary.phoneValidationErrors?.length || 0);
+    if (totalWarnings > 0) {
+      showToast("CSV Imported with Warnings", summary.confirmationMessage, "warning");
+    } else {
+      showToast("CSV Import Complete", summary.confirmationMessage, "success");
+    }
   } catch (err) {
     showToast("CSV Import Error", err.message || "Failed to parse CSV file.", "error");
   }
 }
 
-// Download CSV Template
+// Download CSV Template (Dynamic per Selected Role: Students vs. Mentors)
 document.getElementById("link-download-csv-template")?.addEventListener("click", (e) => {
   e.preventDefault();
-  const sampleCsv = [
-    "Role,ID,Name,MentorID_or_Phone",
-    "mentor,m01,Alice Kim,010-1234-5678",
-    "student,a2024691204,Amr Hassan,m01",
-    "student,a2024691205,Linh Nguyen,m01"
-  ].join("\n");
+  const sampleCsv = getCsvTemplateForRole(activeImportRole);
+  const filename =
+    activeImportRole === "mentors"
+      ? "ksu_compass_mentor_roster_template.csv"
+      : "ksu_compass_student_roster_template.csv";
 
   const blob = new Blob([sampleCsv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "ksu_compass_roster_template.csv";
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 });
@@ -3348,7 +4472,18 @@ document.getElementById("link-download-csv-template")?.addEventListener("click",
 document.getElementById("btn-export-csv")?.addEventListener("click", () => {
   const activeMentorIdSet = getActiveMentorIdSet(adminRosterMentors);
   const rows = [
-    ["Role", "ID", "Name", "InitialPassword", "MentorID_or_Phone", "CompletedTasks", "CompletionPct", "ARC_Status"]
+    [
+      "Role",
+      "ID",
+      "Name",
+      "Email",
+      "Department",
+      "InitialPassword",
+      "MentorID_or_Phone",
+      "CompletedTasks",
+      "CompletionPct",
+      "ARC_Status"
+    ]
   ];
 
   adminRosterMentors.forEach((m) => {
@@ -3356,6 +4491,8 @@ document.getElementById("btn-export-csv")?.addEventListener("click", () => {
       "mentor",
       m._id,
       m.name || m._id,
+      m.email || "",
+      m.department || "",
       getDefaultPasswordForId(m._id),
       m.phone || "",
       "-",
@@ -3374,6 +4511,8 @@ document.getElementById("btn-export-csv")?.addEventListener("click", () => {
       "student",
       s._id,
       s.name || s._id,
+      s.email || "",
+      s.department || "",
       getDefaultPasswordForId(s._id),
       exportedMentorId,
       `${doneCount}/${CORE_TASKS.length}`,
@@ -3392,61 +4531,7 @@ document.getElementById("btn-export-csv")?.addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-// ---------- ADMIN MENTOR MONTHLY REPORTS MANAGEMENT (GROUPED BY MONTH + MENTOR FILTER + 6-SESSION CYCLE) ----------
-function openRenameMonthModal(monthKey) {
-  const cleanKey = String(monthKey || "").trim();
-  if (!cleanKey) return;
-  const modal = document.getElementById("rename-month-modal");
-  const hiddenInput = document.getElementById("rename-month-key-hidden");
-  const keyDisplay = document.getElementById("rename-month-key-display");
-  const labelInput = document.getElementById("rename-month-label-input");
-  if (!modal || !hiddenInput || !labelInput) return;
-
-  hiddenInput.value = cleanKey;
-  if (keyDisplay) keyDisplay.textContent = `Reporting Period: ${cleanKey} (Default: ${formatDefaultMonthGroupLabel(cleanKey)})`;
-  labelInput.value = portalConfigCache?.monthLabels?.[cleanKey] || getMonthGroupDisplayName(cleanKey);
-  modal.style.display = "flex";
-  setTimeout(() => labelInput.focus(), 40);
-}
-
-document.getElementById("rename-month-modal-close")?.addEventListener("click", () => {
-  const modal = document.getElementById("rename-month-modal");
-  if (modal) modal.style.display = "none";
-});
-
-document.getElementById("rename-month-reset-btn")?.addEventListener("click", async () => {
-  const monthKey = document.getElementById("rename-month-key-hidden")?.value;
-  if (!monthKey) return;
-  const currentLabels = { ...(portalConfigCache?.monthLabels || {}) };
-  delete currentLabels[monthKey];
-  await savePortalConfig({ monthLabels: currentLabels });
-
-  const modal = document.getElementById("rename-month-modal");
-  if (modal) modal.style.display = "none";
-  renderAdminAll();
-  showToast("Month Label Reset", `Restored default name: ${formatDefaultMonthGroupLabel(monthKey)}`, "info");
-});
-
-document.getElementById("rename-month-form")?.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const monthKey = (document.getElementById("rename-month-key-hidden")?.value || "").trim();
-  const newLabel = (document.getElementById("rename-month-label-input")?.value || "").trim();
-  if (!monthKey) return;
-
-  const currentLabels = { ...(portalConfigCache?.monthLabels || {}) };
-  if (newLabel) {
-    currentLabels[monthKey] = newLabel;
-  } else {
-    delete currentLabels[monthKey];
-  }
-  await savePortalConfig({ monthLabels: currentLabels });
-
-  const modal = document.getElementById("rename-month-modal");
-  if (modal) modal.style.display = "none";
-  renderAdminAll();
-  showToast("Month Group Updated", `Updated display name to "${getMonthGroupDisplayName(monthKey)}".`, "success");
-});
-
+// ---------- ADMIN MENTOR MONTHLY REPORTS MANAGEMENT (SEMESTER MULTI-SELECT MONTH CHECKLIST + X/2 QUOTA) ----------
 function buildUnifiedMentorDirectory() {
   const mentorDirectoryMap = {};
   adminRosterMentors.forEach((m) => {
@@ -3477,6 +4562,8 @@ function formatFileSizeShort(bytes) {
 
 function renderAdminMonthlyReports() {
   const badge = document.getElementById("admin-reports-count-badge");
+  const semesterBarEl = document.getElementById("admin-semester-selector-bar");
+  const checklistEl = document.getElementById("admin-semester-month-checklist");
   const breadcrumbEl = document.getElementById("admin-reports-breadcrumb-bar");
   const listEl = document.getElementById("admin-monthly-reports-list");
 
@@ -3490,35 +4577,245 @@ function renderAdminMonthlyReports() {
   }
   if (!listEl) return;
 
-  const allMentors = buildUnifiedMentorDirectory();
-  const cycleMonths = buildActiveCycleMonths(adminReportsList);
+  // If a month is currently open, sync Semester & Academic Year to that month
+  if (adminSelectedReportMonth) {
+    const inferred = inferSemesterAndYearFromMonth(adminSelectedReportMonth);
+    adminSelectedSemester = inferred.semester;
+    adminSelectedAcademicYear = inferred.year;
+  }
 
-  if (adminSelectedReportMonth && !cycleMonths.includes(adminSelectedReportMonth)) {
+  const allMentors = buildUnifiedMentorDirectory();
+  const availableYears = getAvailableAcademicYears(adminReportsList);
+  if (!availableYears.includes(adminSelectedAcademicYear)) {
+    availableYears.push(adminSelectedAcademicYear);
+    availableYears.sort((a, b) => a - b);
+  }
+
+  const fallMonthsForYear = getSemesterMonths("fall", adminSelectedAcademicYear);
+  const springMonthsForYear = getSemesterMonths("spring", adminSelectedAcademicYear);
+  const semesterMonths =
+    adminSelectedSemester === "spring" ? springMonthsForYear : fallMonthsForYear;
+  const activeSemesterMeta =
+    SEMESTER_DEFINITIONS[adminSelectedSemester] || SEMESTER_DEFINITIONS.fall;
+
+  // Retrieve ONLY the months checked/selected by the Admin for this semester
+  const selectedMonths = getActiveCheckedMonthsForSemester(
+    adminSelectedSemester,
+    adminSelectedAcademicYear,
+    adminReportsList
+  );
+  const selectedMonthsSet = new Set(selectedMonths);
+
+  if (adminSelectedReportMonth && !selectedMonthsSet.has(adminSelectedReportMonth)) {
     adminSelectedReportMonth = null;
   }
 
+  // Count stored PDFs per semester for the active academic year
+  const fallFilesCount = adminReportsList
+    .filter((r) => fallMonthsForYear.includes(r.month))
+    .reduce((sum, r) => sum + getReportSessionCount(r), 0);
+  const springFilesCount = adminReportsList
+    .filter((r) => springMonthsForYear.includes(r.month))
+    .reduce((sum, r) => sum + getReportSessionCount(r), 0);
+
   // =========================================================================
-  // LEVEL 1: MONTH VIEW (ROOT) — Clean Monthly Folder Cards (Zero Clutter)
+  // LEVEL 1: PRIMARY SEMESTER SELECTOR (FALL SEMESTER vs. SPRING SEMESTER)
+  // =========================================================================
+  if (semesterBarEl) {
+    const yearOptionsHtml = availableYears
+      .map(
+        (yr) =>
+          `<option value="${yr}" ${yr === adminSelectedAcademicYear ? "selected" : ""}>${yr} – ${yr + 1} Academic Year</option>`
+      )
+      .join("");
+
+    semesterBarEl.innerHTML = `
+      <div class="semester-toggle-group" role="tablist" aria-label="Select Semester">
+        <button
+          type="button"
+          class="semester-toggle-btn ${adminSelectedSemester === "fall" ? "active" : ""}"
+          data-select-semester="fall"
+          role="tab"
+          aria-selected="${adminSelectedSemester === "fall"}"
+        >
+          <span>🍂 Fall Semester</span>
+          <span class="semester-toggle-sub">Sep – Feb (6 Months)</span>
+          <span class="semester-toggle-badge">${fallFilesCount} PDFs</span>
+        </button>
+        <button
+          type="button"
+          class="semester-toggle-btn ${adminSelectedSemester === "spring" ? "active" : ""}"
+          data-select-semester="spring"
+          role="tab"
+          aria-selected="${adminSelectedSemester === "spring"}"
+        >
+          <span>🌱 Spring Semester</span>
+          <span class="semester-toggle-sub">Mar – Aug (6 Months)</span>
+          <span class="semester-toggle-badge">${springFilesCount} PDFs</span>
+        </button>
+      </div>
+      <div class="semester-year-control">
+        <label for="admin-reports-year-select">Academic Year:</label>
+        <select id="admin-reports-year-select" class="checklist-filter-select" style="padding: 6px 10px; font-size: 12.5px;">
+          ${yearOptionsHtml}
+        </select>
+      </div>
+    `;
+
+    semesterBarEl.querySelectorAll("[data-select-semester]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const nextSem = btn.getAttribute("data-select-semester") === "spring" ? "spring" : "fall";
+        if (nextSem !== adminSelectedSemester || adminSelectedReportMonth !== null) {
+          adminSelectedSemester = nextSem;
+          adminSelectedReportMonth = null;
+          renderAdminMonthlyReports();
+          if (activePeopleTab === "mentors") {
+            renderDetailedRosterTable();
+          }
+        }
+      });
+    });
+
+    document.getElementById("admin-reports-year-select")?.addEventListener("change", (e) => {
+      adminSelectedAcademicYear = Number(e.target.value) || 2026;
+      adminSelectedReportMonth = null;
+      renderAdminMonthlyReports();
+      if (activePeopleTab === "mentors") {
+        renderDetailedRosterTable();
+      }
+    });
+  }
+
+  // =========================================================================
+  // LEVEL 2: MULTI-SELECT MONTH PICKER / CHECKLIST PER SEMESTER
+  // =========================================================================
+  if (checklistEl) {
+    checklistEl.style.display = adminSelectedReportMonth ? "none" : "block";
+    if (!adminSelectedReportMonth) {
+      const checklistItemsHtml = semesterMonths
+        .map((mk) => {
+          const isChecked = selectedMonthsSet.has(mk);
+          const calName = getCalendarMonthName(mk);
+          const monthPdfCount = adminReportsList
+            .filter((r) => r.month === mk)
+            .reduce((sum, r) => sum + getReportSessionCount(r), 0);
+
+          return `
+            <label class="month-check-option ${isChecked ? "checked" : ""}">
+              <span class="month-check-left">
+                <input
+                  type="checkbox"
+                  data-toggle-active-month="${escapeHtml(mk)}"
+                  ${isChecked ? "checked" : ""}
+                />
+                <span class="month-check-label-text">
+                  <span class="month-check-name">${escapeHtml(calName)}</span>
+                  <span class="month-check-sub">${escapeHtml(mk)}</span>
+                </span>
+              </span>
+              ${
+                monthPdfCount > 0
+                  ? `<span class="month-check-pdf-badge">${monthPdfCount} PDF${monthPdfCount === 1 ? "" : "s"}</span>`
+                  : ""
+              }
+            </label>
+          `;
+        })
+        .join("");
+
+      checklistEl.innerHTML = `
+        <div class="month-checklist-top">
+          <div class="month-checklist-title-wrap">
+            <strong>☑️ Select Active Months — ${escapeHtml(activeSemesterMeta.label)} (${escapeHtml(activeSemesterMeta.rangeLabel)})</strong>
+            <span class="month-checklist-count-pill">${selectedMonths.length} of ${semesterMonths.length} Selected</span>
+          </div>
+          <div class="month-checklist-actions">
+            <button type="button" class="btn-table-action" id="btn-check-all-semester-months" style="padding: 4px 10px; font-size: 11.5px;">
+              Select All 6
+            </button>
+            <button type="button" class="btn-table-action" id="btn-clear-all-semester-months" style="padding: 4px 10px; font-size: 11.5px;">
+              Clear All
+            </button>
+          </div>
+        </div>
+        <div class="month-checklist-grid">
+          ${checklistItemsHtml}
+        </div>
+      `;
+
+      checklistEl.querySelectorAll("[data-toggle-active-month]").forEach((cb) => {
+        cb.addEventListener("change", () => {
+          const mk = cb.getAttribute("data-toggle-active-month");
+          const nextSet = new Set(selectedMonths);
+          if (cb.checked) {
+            nextSet.add(mk);
+          } else {
+            nextSet.delete(mk);
+          }
+          setActiveCheckedMonthsForSemester(
+            adminSelectedSemester,
+            adminSelectedAcademicYear,
+            Array.from(nextSet)
+          );
+          renderAdminMonthlyReports();
+          if (activePeopleTab === "mentors") {
+            renderDetailedRosterTable();
+          }
+        });
+      });
+
+      document.getElementById("btn-check-all-semester-months")?.addEventListener("click", () => {
+        setActiveCheckedMonthsForSemester(
+          adminSelectedSemester,
+          adminSelectedAcademicYear,
+          semesterMonths
+        );
+        renderAdminMonthlyReports();
+        if (activePeopleTab === "mentors") {
+          renderDetailedRosterTable();
+        }
+      });
+
+      document.getElementById("btn-clear-all-semester-months")?.addEventListener("click", () => {
+        setActiveCheckedMonthsForSemester(
+          adminSelectedSemester,
+          adminSelectedAcademicYear,
+          []
+        );
+        renderAdminMonthlyReports();
+        if (activePeopleTab === "mentors") {
+          renderDetailedRosterTable();
+        }
+      });
+    }
+  }
+
+  // =========================================================================
+  // DYNAMIC CARD GENERATION (SELECTED MONTHS ONLY — UNSELECTED NEVER RENDER)
   // =========================================================================
   if (!adminSelectedReportMonth) {
     if (breadcrumbEl) {
-      breadcrumbEl.innerHTML = `
-        <div class="drilldown-step-trail">
-          <span class="drilldown-step-pill active">1. Select Month</span>
-          <span>›</span>
-          <span class="drilldown-step-pill">2. Select Mentor</span>
-          <span>›</span>
-          <span class="drilldown-step-pill">3. View Month's 2 Session PDFs</span>
+      breadcrumbEl.style.display = "none";
+      breadcrumbEl.innerHTML = "";
+    }
+
+    if (selectedMonths.length === 0) {
+      const exampleNames = semesterMonths
+        .slice(0, 3)
+        .map((mk) => getCalendarMonthName(mk))
+        .join(", ");
+      listEl.innerHTML = `
+        <div class="month-empty-selection-box">
+          <h4>No Active Months Selected for ${escapeHtml(activeSemesterMeta.label)}</h4>
+          <p>Check any subset of months above (e.g., <strong>${escapeHtml(exampleNames)}</strong>) to generate their active report folders.</p>
         </div>
-        <span style="font-size: 12px; color: #64748b; font-weight: 600;">
-          ${allMentors.length} ${allMentors.length === 1 ? "mentor" : "mentors"} in cycle · Click a month folder below
-        </span>
       `;
+      return;
     }
 
     listEl.innerHTML = `
       <div class="month-folders-grid">
-        ${cycleMonths
+        ${selectedMonths
           .map((mKey) => {
             const groupName = getMonthGroupDisplayName(mKey);
             let mentorsWithAnyFiles = 0;
@@ -3548,9 +4845,6 @@ function renderAdminMonthlyReports() {
                         <span class="report-month-period-tag">${escapeHtml(mKey)}</span>
                       </div>
                     </div>
-                    <button type="button" class="btn-rename-month-inline" data-rename-month="${escapeHtml(mKey)}" title="Rename month folder">
-                      ✏️ Rename
-                    </button>
                   </div>
 
                   <div class="month-folder-stats" style="margin-top: 16px;">
@@ -3579,29 +4873,25 @@ function renderAdminMonthlyReports() {
       </div>
     `;
 
-    listEl.querySelectorAll("[data-rename-month]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openRenameMonthModal(btn.getAttribute("data-rename-month"));
-      });
-    });
-
     listEl.querySelectorAll("[data-open-month]").forEach((card) => {
       card.addEventListener("click", () => {
         adminSelectedReportMonth = card.getAttribute("data-open-month");
         renderAdminMonthlyReports();
+        if (activePeopleTab === "mentors") {
+          renderDetailedRosterTable();
+        }
       });
     });
     return;
   }
 
   // =========================================================================
-  // LEVEL 2: MENTOR LIST (UNDER THE SELECTED MONTH — LOCALIZED X/2 PROGRESS)
+  // LEVEL 3: MENTOR DIRECTORY INSIDE ACTIVE MONTH BOX (STRICT X/2 QUOTA)
   // =========================================================================
   const activeMonth = adminSelectedReportMonth;
   const activeMonthLabel = getMonthGroupDisplayName(activeMonth);
 
-  // Pre-compute localized monthly status across all mentors in this month
+  // Pre-compute localized monthly status across all mentors in this active month
   const allMentorMonthRecords = allMentors.map((m) => ({
     mentor: m,
     monthAgg: getMentorMonthAggregatedData(m.id, activeMonth, adminReportsList)
@@ -3616,7 +4906,8 @@ function renderAdminMonthlyReports() {
   const completedCount = completedMentorsInMonth.length;
 
   if (breadcrumbEl) {
-    const monthTabsHtml = cycleMonths
+    breadcrumbEl.style.display = "flex";
+    const activeMonthPillsHtml = selectedMonths
       .map((mk) => {
         const isCurrent = mk === activeMonth;
         const mFiles = adminReportsList
@@ -3634,9 +4925,9 @@ function renderAdminMonthlyReports() {
     breadcrumbEl.innerHTML = `
       <div class="month-tabs-switcher">
         <button type="button" class="btn-back-months" id="btn-back-to-month-folders">
-          ← All Months
+          ← Active Months (${selectedMonths.length})
         </button>
-        ${monthTabsHtml}
+        ${activeMonthPillsHtml}
       </div>
       <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <input
@@ -3648,9 +4939,9 @@ function renderAdminMonthlyReports() {
           style="width: 195px; padding: 6px 11px; font-size: 12.5px;"
         />
         <select id="admin-month-status-filter" class="checklist-filter-select" style="padding: 6px 10px; font-size: 12.5px;">
-          <option value="all" ${adminMonthMentorStatusFilter === "all" ? "selected" : ""}>All Statuses (${allMentors.length})</option>
-          <option value="pending" ${adminMonthMentorStatusFilter === "pending" ? "selected" : ""}>Pending / Incomplete (${pendingCount})</option>
-          <option value="submitted" ${adminMonthMentorStatusFilter === "submitted" ? "selected" : ""}>Completed ${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS} (${completedCount})</option>
+          <option value="all" ${adminMonthMentorStatusFilter === "all" ? "selected" : ""}>All (${allMentors.length})</option>
+          <option value="submitted" ${adminMonthMentorStatusFilter === "submitted" ? "selected" : ""}>Submitted: ${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS} (${completedCount})</option>
+          <option value="pending" ${adminMonthMentorStatusFilter === "pending" ? "selected" : ""}>Unsubmitted / Pending: 0/${MONTH_MAX_SESSIONS} or 1/${MONTH_MAX_SESSIONS} (${pendingCount})</option>
         </select>
       </div>
     `;
@@ -3658,12 +4949,18 @@ function renderAdminMonthlyReports() {
     document.getElementById("btn-back-to-month-folders")?.addEventListener("click", () => {
       adminSelectedReportMonth = null;
       renderAdminMonthlyReports();
+      if (activePeopleTab === "mentors") {
+        renderDetailedRosterTable();
+      }
     });
 
     breadcrumbEl.querySelectorAll("[data-switch-month]").forEach((tab) => {
       tab.addEventListener("click", () => {
         adminSelectedReportMonth = tab.getAttribute("data-switch-month");
         renderAdminMonthlyReports();
+        if (activePeopleTab === "mentors") {
+          renderDetailedRosterTable();
+        }
       });
     });
 
@@ -3734,14 +5031,11 @@ function renderAdminMonthlyReports() {
         <div class="report-month-folder-title">
           <span>📂</span>
           <h4>${escapeHtml(activeMonthLabel)} — Mentor Directory</h4>
-          <span class="report-month-period-tag">${escapeHtml(activeMonth)}</span>
+          <span class="report-month-period-tag">${escapeHtml(activeSemesterMeta.label)} · ${escapeHtml(activeMonth)}</span>
           <span class="status-pill-badge approved" style="font-size: 11px;">
             ${totalMonthFilesAll} Session ${totalMonthFilesAll === 1 ? "PDF" : "PDFs"} Stored
           </span>
         </div>
-        <button type="button" class="btn-table-action" data-rename-month="${escapeHtml(activeMonth)}" style="padding: 5px 10px; font-size: 11.5px;">
-          ✏️ Edit Month Label
-        </button>
       </div>
 
       <div class="month-warning-action-bar ${pendingCount === 0 ? "all-clear" : ""}">
@@ -3758,7 +5052,7 @@ function renderAdminMonthlyReports() {
             ${
               pendingCount === 0
                 ? `All ${allMentors.length} mentors have completed ${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS} files for ${escapeHtml(activeMonthLabel)}.`
-                : `${completedCount} completed (${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS}) · ${pendingCount} unsubmitted/incomplete (0/${MONTH_MAX_SESSIONS} or 1/${MONTH_MAX_SESSIONS}).`
+                : `${completedCount} submitted (${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS}) · ${pendingCount} unsubmitted/pending (0/${MONTH_MAX_SESSIONS} or 1/${MONTH_MAX_SESSIONS}).`
             }
           </span>
           ${lastMentorWarnHtml}
@@ -3853,13 +5147,6 @@ function renderAdminMonthlyReports() {
     dispatchWarningToUnsubmittedMentors(activeMonth);
   });
 
-  listEl.querySelectorAll("[data-rename-month]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openRenameMonthModal(btn.getAttribute("data-rename-month"));
-    });
-  });
-
   listEl.querySelectorAll("[data-inspect-mentor]").forEach((row) => {
     row.addEventListener("click", () => {
       const mId = row.getAttribute("data-inspect-mentor");
@@ -3899,36 +5186,19 @@ async function dispatchWarningToUnsubmittedMentors(monthKey) {
     const warningMessage = DEFAULT_MENTOR_REPORT_WARNING_MESSAGE; // "Please submit your monthly report."
     const monthLabel = getMonthGroupDisplayName(monthKey);
 
-    // Send direct message notification strictly to unsubmitted/pending mentors (bypassing 2/2 completed mentors)
-    for (const mentor of pendingMentors) {
-      const channelId = getChatChannelId("admin", mentor.id);
-      const chatDoc = (await dbGetDoc("chats", channelId)) || { messages: [] };
-      const messages = Array.isArray(chatDoc.messages) ? chatDoc.messages : [];
-      messages.push({
-        senderId: "admin",
-        senderName: "International Office",
-        recipientId: mentor.id,
-        recipientName: mentor.name || mentor.id,
-        text: `${warningMessage} (${monthLabel})`,
-        readBy: ["admin"],
-        sentAt: nowIso
-      });
-      await dbSetDoc("chats", channelId, {
-        participants: ["admin", String(mentor.id).toLowerCase()],
-        messages,
-        updatedAt: nowIso
-      });
-    }
-
-    // Persist targeted mentor IDs for this month so ONLY pending mentors see the urgent warning banner on their dashboard
+    // System A: High-Priority Urgent Institutional Warning (strictly separated from System B casual Messenger)
     const nextMentorWarnings = {
       ...(portalConfigCache?.mentorReportWarnings || {}),
       [monthKey]: {
+        id: `mentor_warn_${monthKey}_${Date.now()}`,
         active: true,
+        monthKey,
+        monthLabel,
         message: warningMessage,
         targetMentorIds: pendingMentors.map((m) => m.id),
         recipientCount: pendingMentors.length,
-        sentAt: nowIso
+        sentAt: nowIso,
+        acknowledgedBy: []
       }
     };
     await savePortalConfig({ mentorReportWarnings: nextMentorWarnings });
@@ -3945,7 +5215,7 @@ async function dispatchWarningToUnsubmittedMentors(monthKey) {
     if (confirmTitle) confirmTitle.textContent = "✅ Mentor Report Warning Sent";
     if (confirmMsg) confirmMsg.textContent = feedbackText;
     if (confirmMeta) {
-      confirmMeta.textContent = `Message dispatched: "${warningMessage}" (${monthLabel}). Mentors who already submitted ${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS} files were automatically bypassed.`;
+      confirmMeta.textContent = `High-priority blocking popup & OS push notification dispatched: "${warningMessage}" (${monthLabel}). Mentors who already submitted ${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS} files were automatically bypassed.`;
     }
     if (confirmModal) confirmModal.style.display = "flex";
   } catch (err) {
@@ -3956,11 +5226,18 @@ async function dispatchWarningToUnsubmittedMentors(monthKey) {
   }
 }
 
-// Export Grouped PDFs (Scoped to Selected Month if in Level 2, or All Months if at Level 1)
+// Export Grouped PDFs (Scoped to Selected Month if viewing a month, or Active Checked Months if at Semester Overview)
 document.getElementById("btn-export-mentor-pdfs")?.addEventListener("click", () => {
+  const checkedMonths = getActiveCheckedMonthsForSemester(
+    adminSelectedSemester,
+    adminSelectedAcademicYear,
+    adminReportsList
+  );
   const matchingReports = adminReportsList.filter((rep) => {
-    if (adminSelectedReportMonth && rep.month !== adminSelectedReportMonth) return false;
-    return true;
+    if (adminSelectedReportMonth) {
+      return rep.month === adminSelectedReportMonth;
+    }
+    return checkedMonths.includes(rep.month);
   });
 
   const downloadableFiles = [];
@@ -3980,7 +5257,7 @@ document.getElementById("btn-export-mentor-pdfs")?.addEventListener("click", () 
   });
 
   if (downloadableFiles.length === 0) {
-    showToast("No PDFs to Export", "There are 0 session PDF attachments in the current view.", "info");
+    showToast("No PDFs to Export", "There are 0 session PDF attachments in the active view.", "info");
     return;
   }
 
@@ -3995,9 +5272,10 @@ document.getElementById("btn-export-mentor-pdfs")?.addEventListener("click", () 
     }, index * 180);
   });
 
+  const semesterLabel = (SEMESTER_DEFINITIONS[adminSelectedSemester] || SEMESTER_DEFINITIONS.fall).label;
   const scopeLabel = adminSelectedReportMonth
     ? getMonthGroupDisplayName(adminSelectedReportMonth)
-    : "all report months";
+    : `active ${semesterLabel} months`;
   showToast(
     "Exporting Session PDFs",
     `Downloading ${downloadableFiles.length} session PDF(s) from ${scopeLabel}.`,
@@ -4006,7 +5284,7 @@ document.getElementById("btn-export-mentor-pdfs")?.addEventListener("click", () 
 });
 
 // ===========================================================================
-// LEVEL 3: SESSION & FILE VIEW (DRILL-DOWN MODAL PER MENTOR & SELECTED MONTH)
+// SESSION & FILE VIEW (DRILL-DOWN MODAL PER MENTOR & ACTIVE MONTH)
 // ===========================================================================
 async function openMentorMonthSubmissionModal(mentorId, monthKey) {
   const modal = document.getElementById("report-detail-modal");
@@ -4025,7 +5303,18 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
     name: mentorId
   };
 
-  const cycleMonths = buildActiveCycleMonths(adminReportsList);
+  const inferred = inferSemesterAndYearFromMonth(monthKey);
+  const checkedSemesterMonths = getActiveCheckedMonthsForSemester(
+    inferred.semester,
+    inferred.year,
+    adminReportsList
+  );
+  const modalMonthsList = checkedSemesterMonths.includes(monthKey)
+    ? checkedSemesterMonths
+    : getSemesterMonths(inferred.semester, inferred.year).filter(
+        (mk) => mk === monthKey || checkedSemesterMonths.includes(mk)
+      );
+  const semesterLabel = (SEMESTER_DEFINITIONS[inferred.semester] || SEMESTER_DEFINITIONS.fall).label;
   const agg = getMentorMonthAggregatedData(mentorObj.id, monthKey, adminReportsList);
   const groupName = getMonthGroupDisplayName(monthKey);
 
@@ -4033,11 +5322,11 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
     titleEl.textContent = `📂 ${mentorObj.name} — ${groupName}`;
   }
   if (subEl) {
-    subEl.textContent = `Mentor ID: ${mentorObj.id} · Monthly Progress: ${agg.filesCount}/${MONTH_MAX_SESSIONS} Files Submitted (${monthKey})`;
+    subEl.textContent = `Mentor ID: ${mentorObj.id} · ${semesterLabel} · Monthly Progress: ${agg.filesCount}/${MONTH_MAX_SESSIONS} Files Submitted (${monthKey})`;
   }
 
-  // Month switcher strip inside Level 3 modal so Admin can also inspect this mentor's other months in 1 click
-  const modalMonthTabsHtml = cycleMonths
+  // Active-months switcher strip inside modal (shows only active checked months for this semester)
+  const modalMonthTabsHtml = modalMonthsList
     .map((mk) => {
       const mAgg = getMentorMonthAggregatedData(mentorObj.id, mk, adminReportsList);
       const isCur = mk === monthKey;
@@ -4145,7 +5434,7 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 12.5px;">
       <div><strong>Mentor:</strong> ${escapeHtml(mentorObj.name)} (ID: ${escapeHtml(mentorObj.id)})</div>
-      <div><strong>Selected Month:</strong> ${escapeHtml(groupName)} (${escapeHtml(monthKey)})</div>
+      <div><strong>Selected Month:</strong> ${escapeHtml(groupName)} (${escapeHtml(semesterLabel)} · ${escapeHtml(monthKey)})</div>
       <div><strong>Monthly Progress:</strong> ${agg.filesCount}/${MONTH_MAX_SESSIONS} Files Submitted</div>
       <div><strong>Exact Submission Timestamp:</strong> ${escapeHtml(latestTsDisplay)}</div>
     </div>
@@ -4200,10 +5489,13 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
 
   modal.style.display = "flex";
 
-  // Switch between months for this same mentor inside Level 3 modal
+  // Switch between months for this same mentor inside the modal
   body.querySelectorAll("[data-modal-switch-month]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const nextMonth = btn.getAttribute("data-modal-switch-month");
+      const nextInferred = inferSemesterAndYearFromMonth(nextMonth);
+      adminSelectedSemester = nextInferred.semester;
+      adminSelectedAcademicYear = nextInferred.year;
       adminSelectedReportMonth = nextMonth;
       renderAdminMonthlyReports();
       openMentorMonthSubmissionModal(mentorObj.id, nextMonth);
@@ -4712,138 +6004,426 @@ async function markChannelMessagesAsRead(channelId) {
   }
 }
 
-async function refreshBellNotifications(showToastOnNew = false) {
-  const myKey = getMyChatKey();
-  const bellDot = document.getElementById("nav-unread-dot");
-  const studentMentorDot = document.getElementById("student-mentor-unread-dot");
-  const mentorAdminDot = document.getElementById("mentor-admin-unread-dot");
-  const listEl = document.getElementById("nav-notifications-list");
+// ============================================================
+// 9A. SYSTEM A: HIGH-PRIORITY URGENT WARNINGS (POPUPS + WEB PUSH)
+// ============================================================
+let activeUrgentAlertQueue = [];
+let currentDisplayedUrgentAlert = null;
 
-  if (!myKey) {
-    if (bellDot) bellDot.style.display = "none";
+function getUrgentStorageSuffix() {
+  const uid = String(currentRole === "admin" ? "admin" : currentUserId || "anon").toLowerCase();
+  return `${currentRole || "none"}_${uid}`;
+}
+
+function getLocalAcknowledgedUrgentIds() {
+  try {
+    const raw = localStorage.getItem(`${STORAGE_PREFIX}ack_urgent_${getUrgentStorageSuffix()}`);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function saveLocalAcknowledgedUrgentId(alertId) {
+  if (!alertId) return;
+  const set = getLocalAcknowledgedUrgentIds();
+  set.add(alertId);
+  try {
+    localStorage.setItem(`${STORAGE_PREFIX}ack_urgent_${getUrgentStorageSuffix()}`, JSON.stringify(Array.from(set)));
+  } catch (_) {}
+}
+
+function getLocalPushedUrgentIds() {
+  try {
+    const raw = localStorage.getItem(`${STORAGE_PREFIX}pushed_urgent_${getUrgentStorageSuffix()}`);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch (_) {
+    return new Set();
+  }
+}
+
+function saveLocalPushedUrgentId(alertId) {
+  if (!alertId) return;
+  const set = getLocalPushedUrgentIds();
+  set.add(alertId);
+  try {
+    localStorage.setItem(`${STORAGE_PREFIX}pushed_urgent_${getUrgentStorageSuffix()}`, JSON.stringify(Array.from(set)));
+  } catch (_) {}
+}
+
+function syncPushPermissionBannerUI() {
+  const bar = document.getElementById("browser-push-permission-bar");
+  if (!bar) return;
+  if (typeof window !== "undefined" && "Notification" in window && window.Notification.permission === "default") {
+    bar.style.display = "flex";
+  } else {
+    bar.style.display = "none";
+  }
+}
+
+async function requestUrgentPushPermission(interactive = false) {
+  syncPushPermissionBannerUI();
+  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+  if (window.Notification.permission === "granted" || window.Notification.permission === "denied") {
+    syncPushPermissionBannerUI();
+    return window.Notification.permission;
+  }
+  try {
+    const result = await window.Notification.requestPermission();
+    syncPushPermissionBannerUI();
+    if (interactive && result === "granted") {
+      showToast("Push Alerts Enabled", "Browser & OS push alerts are active for urgent deadlines.", "success");
+    }
+    return result;
+  } catch (_) {
+    return "default";
+  }
+}
+
+document.getElementById("btn-enable-browser-push")?.addEventListener("click", async (e) => {
+  e.stopPropagation();
+  await requestUrgentPushPermission(true);
+});
+
+async function triggerNativeUrgentPushNotification(alertItem) {
+  if (!alertItem || !alertItem.id) return;
+  const pushedSet = getLocalPushedUrgentIds();
+  if (pushedSet.has(alertItem.id)) return;
+
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+
+  if (window.Notification.permission === "default") {
+    await requestUrgentPushPermission(false);
+  }
+  if (window.Notification.permission !== "granted") return;
+
+  saveLocalPushedUrgentId(alertItem.id);
+
+  const options = {
+    body: alertItem.pushBody || alertItem.message,
+    icon: "logo.jpeg",
+    badge: "logo.jpeg",
+    tag: alertItem.id,
+    requireInteraction: true
+  };
+
+  try {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && typeof reg.showNotification === "function") {
+        await reg.showNotification(alertItem.title, options);
+        return;
+      }
+    }
+  } catch (_) {}
+
+  try {
+    const n = new window.Notification(alertItem.title, options);
+    n.onclick = () => {
+      try {
+        window.focus();
+      } catch (_) {}
+      n.close();
+    };
+  } catch (_) {}
+}
+
+async function collectActiveUrgentAlertsForCurrentUser() {
+  if (!currentRole || !currentUserId || currentRole === "admin") return [];
+
+  const cfg = portalConfigCache || (await loadPortalConfig());
+  const myIdLower = String(currentUserId || "").toLowerCase();
+  const ackSet = getLocalAcknowledgedUrgentIds();
+  const alerts = [];
+
+  if (currentRole === "student") {
+    const arcWarn = cfg?.arcWarning;
+    if (arcWarn && arcWarn.active) {
+      const targetIds = Array.isArray(arcWarn.targetStudentIds) ? arcWarn.targetStudentIds : null;
+      const isTargeted =
+        !targetIds || targetIds.some((tid) => String(tid).toLowerCase() === myIdLower);
+
+      if (isTargeted) {
+        const checklistDoc = (await dbGetDoc("checklists", currentUserId)) || {};
+        const arcDoc = checklistDoc?.taskDocs?.arc || null;
+        const isArcApproved = arcDoc?.status === "approved";
+        const isArcPendingReview = Boolean(arcDoc && arcDoc.dataUrl && arcDoc.status === "pending");
+        const isArcCheckedWithoutRejection =
+          Boolean(checklistDoc?.tasks?.arc) && arcDoc?.status !== "rejected";
+        const hasSubmittedArc = isArcApproved || isArcPendingReview || isArcCheckedWithoutRejection;
+
+        if (!hasSubmittedArc) {
+          const dlInfo = computeArcDeadlineInfo(cfg?.arcDeadline, cfg?.arcCustomMessage);
+          const alertId = arcWarn.id || `arc_warn_${arcWarn.lastSentAt || "active"}`;
+          const configAck = Array.isArray(arcWarn.acknowledgedBy)
+            ? arcWarn.acknowledgedBy.some((u) => String(u).toLowerCase() === myIdLower)
+            : false;
+
+          alerts.push({
+            id: alertId,
+            kind: "student_arc",
+            title: "Urgent ARC Application & Deadline Notice",
+            sender: "International Office (Admin)",
+            message: arcWarn.customMessage || dlInfo.personalizedMessage,
+            meta: `Official Deadline: ${dlInfo.formattedDue} · Upload your Alien Registration Card (ARC) proof immediately.`,
+            pushBody: `${dlInfo.personalizedMessage} (Due: ${dlInfo.formattedDue})`,
+            sentAt: arcWarn.lastSentAt || cfg?.updatedAt || "",
+            ctaLabel: "⇪ Acknowledge & Upload ARC Proof",
+            isAcknowledged: ackSet.has(alertId) || configAck
+          });
+        }
+      }
+    }
+  } else if (currentRole === "mentor") {
+    const warningsMap = cfg?.mentorReportWarnings || {};
+    const allReports = await dbGetAll("monthlyReports");
+    const myReports = allReports.filter(
+      (r) => String(r.mentorId || "").toLowerCase() === myIdLower
+    );
+
+    Object.entries(warningsMap).forEach(([mKey, wObj]) => {
+      if (!wObj || wObj.active === false || !Array.isArray(wObj.targetMentorIds)) return;
+      const isTargeted = wObj.targetMentorIds.some((tid) => String(tid).toLowerCase() === myIdLower);
+      if (!isTargeted) return;
+
+      const filesCount = getMentorMonthAggregatedData(currentUserId, mKey, myReports).filesCount;
+      if (filesCount >= MONTH_MAX_SESSIONS) return;
+
+      const monthLabel = wObj.monthLabel || getMonthGroupDisplayName(mKey);
+      const alertId = wObj.id || `mentor_warn_${mKey}_${wObj.sentAt || "active"}`;
+      const configAck = Array.isArray(wObj.acknowledgedBy)
+        ? wObj.acknowledgedBy.some((u) => String(u).toLowerCase() === myIdLower)
+        : false;
+      const msg = wObj.message || DEFAULT_MENTOR_REPORT_WARNING_MESSAGE;
+
+      alerts.push({
+        id: alertId,
+        kind: "mentor_report",
+        monthKey: mKey,
+        title: `Critical Monthly Report Unsubmitted (${monthLabel})`,
+        sender: "International Office (Admin)",
+        message: msg,
+        meta: `${monthLabel} (${mKey}) · Current progress: ${filesCount}/${MONTH_MAX_SESSIONS} Session PDFs Submitted`,
+        pushBody: `${msg} — ${monthLabel} (${filesCount}/${MONTH_MAX_SESSIONS} PDFs submitted)`,
+        sentAt: wObj.sentAt || cfg?.updatedAt || "",
+        ctaLabel: "+ Acknowledge & Submit Report",
+        isAcknowledged: ackSet.has(alertId) || configAck
+      });
+    });
+  }
+
+  alerts.sort((a, b) => String(b.sentAt).localeCompare(String(a.sentAt)));
+  return alerts;
+}
+
+async function acknowledgeUrgentAlertItem(alertItem) {
+  if (!alertItem || !alertItem.id) return;
+  saveLocalAcknowledgedUrgentId(alertItem.id);
+
+  const myIdLower = String(currentUserId || "").toLowerCase();
+  const cfg = portalConfigCache || (await loadPortalConfig());
+
+  if (alertItem.kind === "student_arc" && cfg?.arcWarning) {
+    const prevAck = Array.isArray(cfg.arcWarning.acknowledgedBy) ? cfg.arcWarning.acknowledgedBy : [];
+    if (!prevAck.some((u) => String(u).toLowerCase() === myIdLower)) {
+      await savePortalConfig({
+        arcWarning: {
+          ...cfg.arcWarning,
+          acknowledgedBy: [...prevAck, currentUserId]
+        }
+      });
+    }
+  } else if (alertItem.kind === "mentor_report" && alertItem.monthKey && cfg?.mentorReportWarnings?.[alertItem.monthKey]) {
+    const wObj = cfg.mentorReportWarnings[alertItem.monthKey];
+    const prevAck = Array.isArray(wObj.acknowledgedBy) ? wObj.acknowledgedBy : [];
+    if (!prevAck.some((u) => String(u).toLowerCase() === myIdLower)) {
+      await savePortalConfig({
+        mentorReportWarnings: {
+          ...cfg.mentorReportWarnings,
+          [alertItem.monthKey]: {
+            ...wObj,
+            acknowledgedBy: [...prevAck, currentUserId]
+          }
+        }
+      });
+    }
+  }
+}
+
+function renderUrgentBlockingModalFromQueue() {
+  const modal = document.getElementById("urgent-system-alert-modal");
+  if (!modal) return;
+
+  if (!activeUrgentAlertQueue.length) {
+    currentDisplayedUrgentAlert = null;
+    modal.style.display = "none";
     return;
   }
 
-  const allChats = await dbGetAll("chats");
-  const incomingItems = [];
-  let unreadCount = 0;
+  const nextAlert = activeUrgentAlertQueue[0];
+  currentDisplayedUrgentAlert = nextAlert;
 
-  allChats.forEach((chatDoc) => {
-    const channelId = String(chatDoc._id || "").toLowerCase();
-    const parts = channelId.split("__");
-    const isParticipant =
-      parts.includes(myKey) ||
-      (Array.isArray(chatDoc.participants) &&
-        chatDoc.participants.some((p) => String(p).toLowerCase() === myKey));
+  const queueBadge = document.getElementById("urgent-alert-queue-count");
+  const titleEl = document.getElementById("urgent-alert-title");
+  const senderEl = document.getElementById("urgent-alert-sender");
+  const msgEl = document.getElementById("urgent-alert-message");
+  const metaEl = document.getElementById("urgent-alert-meta");
+  const actionBtn = document.getElementById("btn-urgent-alert-action");
 
-    if (!isParticipant) return;
+  if (queueBadge) {
+    if (activeUrgentAlertQueue.length > 1) {
+      queueBadge.style.display = "inline-block";
+      queueBadge.textContent = `1 of ${activeUrgentAlertQueue.length} Urgent`;
+    } else {
+      queueBadge.style.display = "none";
+    }
+  }
+  if (titleEl) titleEl.textContent = nextAlert.title;
+  if (senderEl) senderEl.textContent = `Issued by ${nextAlert.sender}`;
+  if (msgEl) msgEl.textContent = nextAlert.message;
+  if (metaEl) metaEl.textContent = nextAlert.meta;
 
-    const messages = Array.isArray(chatDoc.messages) ? chatDoc.messages : [];
-    messages.forEach((m, idx) => {
-      const senderLower = String(m.senderId || "").toLowerCase();
-      if (senderLower === myKey) return; // Ignore own sent messages
+  if (actionBtn) {
+    if (nextAlert.ctaLabel) {
+      actionBtn.style.display = "inline-flex";
+      actionBtn.style.alignItems = "center";
+      actionBtn.style.justifyContent = "center";
+      actionBtn.textContent = nextAlert.ctaLabel;
+    } else {
+      actionBtn.style.display = "none";
+    }
+  }
 
-      const readBy = Array.isArray(m.readBy) ? m.readBy : [];
-      const isUnread = !readBy.includes(myKey);
-      const sig = `${channelId}_${idx}_${m.sentAt || ""}`;
+  modal.style.display = "flex";
+}
 
-      if (isUnread) {
-        unreadCount++;
-        if (showToastOnNew && !knownUnreadMsgSignatures.has(sig)) {
-          const chatModal = document.getElementById("chat-modal");
-          const isChatOpenWithSender =
-            chatModal?.style.display === "flex" &&
-            String(activeChatRecipientId || "").toLowerCase() === senderLower;
+document.getElementById("btn-acknowledge-urgent-alert")?.addEventListener("click", async () => {
+  if (!currentDisplayedUrgentAlert) {
+    const modal = document.getElementById("urgent-system-alert-modal");
+    if (modal) modal.style.display = "none";
+    return;
+  }
+  const acked = currentDisplayedUrgentAlert;
+  activeUrgentAlertQueue = activeUrgentAlertQueue.filter((a) => a.id !== acked.id);
+  await acknowledgeUrgentAlertItem(acked);
+  renderUrgentBlockingModalFromQueue();
+  await renderUrgentAlertsBellDropdown();
+  showToast("Alert Acknowledged", "Urgent institutional notice marked as read.", "info");
+});
 
-          if (!isChatOpenWithSender) {
-            showToast(
-              `💬 New message from ${m.senderName || m.senderId}`,
-              m.text || "Click the bell icon to read and reply.",
-              "info"
-            );
-          }
-        }
-        knownUnreadMsgSignatures.add(sig);
-      }
+document.getElementById("btn-urgent-alert-action")?.addEventListener("click", async () => {
+  if (!currentDisplayedUrgentAlert) return;
+  const targetAlert = currentDisplayedUrgentAlert;
+  activeUrgentAlertQueue = activeUrgentAlertQueue.filter((a) => a.id !== targetAlert.id);
+  await acknowledgeUrgentAlertItem(targetAlert);
+  renderUrgentBlockingModalFromQueue();
+  await renderUrgentAlertsBellDropdown();
 
-      incomingItems.push({
-        channelId: chatDoc._id,
-        senderId: m.senderId,
-        senderName: m.senderName || m.senderId,
-        text: m.text || "",
-        sentAt: m.sentAt || "",
-        isUnread
-      });
-    });
-  });
+  if (targetAlert.kind === "student_arc" && currentRole === "student") {
+    pendingUploadTaskId = "arc";
+    document.getElementById("task-doc-input")?.click();
+  } else if (targetAlert.kind === "mentor_report" && currentRole === "mentor") {
+    const reportModal = document.getElementById("monthly-report-modal");
+    const monthInput = document.getElementById("report-month-input");
+    if (monthInput && targetAlert.monthKey) monthInput.value = targetAlert.monthKey;
+    if (reportModal) reportModal.style.display = "flex";
+    await refreshMentorReportModalState();
+  }
+});
 
-  // Sort newest first
-  incomingItems.sort((a, b) => String(b.sentAt).localeCompare(String(a.sentAt)));
+async function renderUrgentAlertsBellDropdown() {
+  const bellDot = document.getElementById("nav-unread-dot");
+  const listEl = document.getElementById("nav-notifications-list");
+  syncPushPermissionBannerUI();
 
-  // Update Topbar Bell Unread Badge
+  if (!currentRole || currentRole === "admin") {
+    if (bellDot) bellDot.style.display = "none";
+    if (listEl) {
+      listEl.innerHTML =
+        currentRole === "admin"
+          ? `<div class="notif-empty-state">System A urgent alerts dispatched by Admin appear as blocking popups &amp; OS push alerts on targeted Student and Mentor screens.</div>`
+          : `<div class="notif-empty-state">No active urgent alerts.</div>`;
+    }
+    return [];
+  }
+
+  const allUrgent = await collectActiveUrgentAlertsForCurrentUser();
+  const unackCount = allUrgent.filter((a) => !a.isAcknowledged).length;
+
   if (bellDot) {
-    if (unreadCount > 0) {
+    if (unackCount > 0) {
       bellDot.style.display = "inline-flex";
-      bellDot.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+      bellDot.textContent = unackCount > 99 ? "99+" : String(unackCount);
     } else {
       bellDot.style.display = "none";
       bellDot.textContent = "";
     }
   }
 
-  if (studentMentorDot) {
-    studentMentorDot.style.display = unreadCount > 0 ? "inline-block" : "none";
-  }
-  if (mentorAdminDot) {
-    mentorAdminDot.style.display = unreadCount > 0 ? "inline-block" : "none";
-  }
-
-  // Render Bell Dropdown List
   if (listEl) {
-    if (incomingItems.length === 0) {
-      listEl.innerHTML = `<div class="notif-empty-state">No message notifications yet.</div>`;
+    if (allUrgent.length === 0) {
+      listEl.innerHTML = `<div class="notif-empty-state">No active urgent institutional alerts.</div>`;
     } else {
-      listEl.innerHTML = incomingItems
-        .slice(0, 25)
+      listEl.innerHTML = allUrgent
         .map((item) => {
-          const timeStr = item.sentAt
-            ? item.sentAt.slice(5, 16).replace("T", " ")
-            : "";
+          const timeStr = item.sentAt ? item.sentAt.slice(5, 16).replace("T", " ") : "Active";
           return `
-            <div class="notif-item-row ${item.isUnread ? "unread" : ""}" data-notif-sender-id="${escapeHtml(item.senderId)}" data-notif-sender-name="${escapeHtml(item.senderName)}" data-notif-channel="${escapeHtml(item.channelId)}">
-              <div class="notif-avatar-circle">${escapeHtml(getInitials(item.senderName))}</div>
+            <div class="notif-item-row ${!item.isAcknowledged ? "unread" : ""}" data-urgent-alert-id="${escapeHtml(item.id)}">
+              <div class="notif-avatar-circle" style="background: #fee2e2; color: #b91c1c;">🚨</div>
               <div class="notif-content-col">
                 <div class="notif-top-line">
-                  <span class="notif-sender-name">${escapeHtml(item.senderName)}</span>
+                  <span class="notif-sender-name">${escapeHtml(item.title)}</span>
                   <span class="notif-time-label">${escapeHtml(timeStr)}</span>
                 </div>
-                <p class="notif-msg-preview">${escapeHtml(item.text)}</p>
+                <p class="notif-msg-preview">${escapeHtml(item.message)}</p>
+                <span style="font-size: 11px; color: ${item.isAcknowledged ? "#16a34a" : "#b91c1c"}; font-weight: 700;">
+                  ${item.isAcknowledged ? "✓ Acknowledged" : "• Requires Acknowledgment"}
+                </span>
               </div>
-              ${item.isUnread ? `<span class="notif-unread-pill" title="Unread"></span>` : ""}
             </div>
           `;
         })
         .join("");
 
-      listEl.querySelectorAll(".notif-item-row").forEach((row) => {
-        row.addEventListener("click", async () => {
-          const sId = row.getAttribute("data-notif-sender-id");
-          const sName = row.getAttribute("data-notif-sender-name");
-          const chId = row.getAttribute("data-notif-channel");
-
+      listEl.querySelectorAll("[data-urgent-alert-id]").forEach((row) => {
+        row.addEventListener("click", () => {
+          const id = row.getAttribute("data-urgent-alert-id");
+          const found = allUrgent.find((a) => a.id === id);
           const dropdown = document.getElementById("nav-notifications-dropdown");
           if (dropdown) dropdown.style.display = "none";
-
-          await markChannelMessagesAsRead(chId);
-          await openChatModal(sId, sName, "Direct Message");
-          await refreshBellNotifications(false);
+          if (found) {
+            activeUrgentAlertQueue = [found, ...activeUrgentAlertQueue.filter((a) => a.id !== found.id)];
+            renderUrgentBlockingModalFromQueue();
+          }
         });
       });
     }
   }
+
+  return allUrgent;
 }
 
-// Toggle Bell Notification Dropdown on Click
+async function checkAndDisplayUrgentSystemAlerts(allowPush = true) {
+  const allUrgent = await renderUrgentAlertsBellDropdown();
+  const unacknowledged = allUrgent.filter((a) => !a.isAcknowledged);
+
+  if (unacknowledged.length > 0) {
+    if (allowPush) {
+      for (const alertItem of unacknowledged) {
+        await triggerNativeUrgentPushNotification(alertItem);
+      }
+    }
+    activeUrgentAlertQueue = unacknowledged;
+    renderUrgentBlockingModalFromQueue();
+  } else if (!currentDisplayedUrgentAlert) {
+    const modal = document.getElementById("urgent-system-alert-modal");
+    if (modal) modal.style.display = "none";
+  }
+}
+
+// Toggle Urgent System Alerts Bell Dropdown on Click
 document.getElementById("nav-bell-btn")?.addEventListener("click", async (e) => {
   e.stopPropagation();
   const dropdown = document.getElementById("nav-notifications-dropdown");
@@ -4851,25 +6431,22 @@ document.getElementById("nav-bell-btn")?.addEventListener("click", async (e) => 
   const isOpening = dropdown.style.display === "none";
   dropdown.style.display = isOpening ? "block" : "none";
   if (isOpening) {
-    await refreshBellNotifications(false);
+    await renderUrgentAlertsBellDropdown();
   }
 });
 
-// Mark All Notifications as Read
+// Acknowledge All Urgent Alerts from Bell Header
 document.getElementById("btn-mark-all-read")?.addEventListener("click", async (e) => {
   e.stopPropagation();
-  const myKey = getMyChatKey();
-  if (!myKey) return;
-
-  const allChats = await dbGetAll("chats");
-  for (const chatDoc of allChats) {
-    const channelId = String(chatDoc._id || "").toLowerCase();
-    if (channelId.split("__").includes(myKey)) {
-      await markChannelMessagesAsRead(chatDoc._id);
-    }
+  const allUrgent = await collectActiveUrgentAlertsForCurrentUser();
+  const unack = allUrgent.filter((a) => !a.isAcknowledged);
+  for (const item of unack) {
+    await acknowledgeUrgentAlertItem(item);
   }
-  await refreshBellNotifications(false);
-  showToast("Notifications Cleared", "All messages marked as read.", "info");
+  activeUrgentAlertQueue = [];
+  renderUrgentBlockingModalFromQueue();
+  await renderUrgentAlertsBellDropdown();
+  showToast("Urgent Alerts Acknowledged", "All urgent system warnings marked as read.", "info");
 });
 
 // Close Bell Dropdown When Clicking Outside
@@ -4881,51 +6458,573 @@ document.addEventListener("click", (e) => {
   }
 });
 
-async function openChatModal(recipientId, recipientName, roleLabel = "Direct Message") {
-  activeChatRecipientId = recipientId;
-  activeChatRecipientName = recipientName;
+// ============================================================
+// 9B. SYSTEM B: STANDARD IN-APP MESSENGER (CASUAL CHAT DRAWER)
+// Strict Role Permission Matrix:
+//   - Student -> Assigned Mentor ONLY (Admin/Office & all others blocked)
+//   - Mentor  -> Assigned Students + Admin ONLY
+//   - Admin   -> Mentors ONLY (Students blocked; Admin->Student is Urgent Warnings only)
+// ============================================================
+let activeChatRecipientRoleLabel = "Direct Message";
+let cachedMessengerThreads = [];
 
-  const modal = document.getElementById("chat-modal");
+function syncMessengerRoleChromeAndComposer(hasAuthorizedTarget = false) {
+  const scopeEl = document.getElementById("messenger-subtitle-scope");
+  const searchInput = document.getElementById("messenger-search-input");
+  const textInput = document.getElementById("chat-text-input");
+  const sendBtn = document.getElementById("chat-send-btn");
   const titleEl = document.getElementById("chat-modal-recipient");
   const roleEl = document.getElementById("chat-modal-role");
-  if (titleEl) titleEl.textContent = recipientName;
-  if (roleEl) roleEl.textContent = roleLabel;
-  if (modal) modal.style.display = "flex";
+  const avatarEl = document.getElementById("chat-modal-avatar");
 
-  const senderKey = currentRole === "admin" ? "admin" : currentUserId;
+  if (scopeEl) {
+    if (currentRole === "student") {
+      scopeEl.textContent = "1:1 direct chat with your Assigned Mentor";
+    } else if (currentRole === "mentor") {
+      scopeEl.textContent = "Assigned Mentees & International Office";
+    } else if (currentRole === "admin") {
+      scopeEl.textContent = "Direct Messenger with Mentors";
+    } else {
+      scopeEl.textContent = "Direct conversations";
+    }
+  }
+
+  if (searchInput) {
+    if (currentRole === "student") {
+      searchInput.placeholder = "Search mentor messages...";
+    } else if (currentRole === "admin") {
+      searchInput.placeholder = "Search mentors...";
+    } else {
+      searchInput.placeholder = "Search mentees or Admin...";
+    }
+  }
+
+  if (textInput) {
+    textInput.disabled = !hasAuthorizedTarget;
+    textInput.placeholder = hasAuthorizedTarget
+      ? "Write a message..."
+      : currentRole === "student"
+        ? "Waiting for mentor assignment..."
+        : "Select an authorized conversation to message...";
+  }
+  if (sendBtn) {
+    sendBtn.disabled = !hasAuthorizedTarget;
+  }
+
+  if (!hasAuthorizedTarget) {
+    if (titleEl) titleEl.textContent = "Select a conversation";
+    if (roleEl) {
+      roleEl.textContent =
+        currentRole === "student"
+          ? "Assigned Mentor Chat"
+          : currentRole === "admin"
+            ? "Mentor Directory Chat"
+            : "Direct Message";
+    }
+    if (avatarEl) avatarEl.textContent = "💬";
+  }
+}
+
+async function buildMessengerThreadsForCurrentUser() {
+  const myKey = getMyChatKey();
+  if (!myKey || !currentRole) return [];
+
+  // Load roster first so local roster mirror is up-to-date before chats authorization filter runs
+  const allRoster = await dbGetAll("roster");
+  const allChats = await dbGetAll("chats");
+
+  const rosterById = new Map();
+  const legacyMentors = getLocalCollection("mentors") || {};
+  Object.entries(legacyMentors).forEach(([id, data]) => {
+    if (id && data) {
+      rosterById.set(String(id).toLowerCase(), { role: "mentor", ...data, _id: id });
+    }
+  });
+  allRoster.forEach((person) => {
+    if (person && person._id) {
+      rosterById.set(String(person._id).toLowerCase(), person);
+    }
+  });
+
+  // Keep currentStudentMentorId synchronized with latest roster assignment when in student session
+  if (currentRole === "student" && currentUserId) {
+    const meDoc = rosterById.get(String(currentUserId).toLowerCase());
+    if (meDoc) {
+      const candId = cleanMentorRefValue(meDoc.mentorId);
+      const candDoc = candId ? rosterById.get(candId.toLowerCase()) : null;
+      currentStudentMentorId = candId && candDoc && candDoc.role !== "student" ? candId : null;
+    }
+  }
+
+  const threadsMap = new Map();
+  const ensureContact = (id, name, roleTag) => {
+    const key = String(id || "").trim().toLowerCase();
+    if (!key || key === myKey) return;
+    // Enforce strict role permission matrix before exposing ANY contact in threadsMap
+    if (!isMessengerPairAuthorized(currentRole, currentUserId, key, rosterById)) {
+      return;
+    }
+    if (!threadsMap.has(key)) {
+      threadsMap.set(key, {
+        contactId: id,
+        contactKey: key,
+        contactName: name || id,
+        roleTag: roleTag || "Direct Message",
+        channelId: getChatChannelId(myKey, key),
+        lastMessageText: "",
+        lastSenderKey: "",
+        lastSentAt: "",
+        unreadCount: 0,
+        totalMessages: 0
+      });
+    }
+  };
+
+  // Pre-populate STRICTLY authorized contacts per role
+  if (currentRole === "student") {
+    // Student ONLY sees their Assigned Mentor — NEVER International Office / Admin!
+    if (currentStudentMentorId) {
+      const mDoc = rosterById.get(String(currentStudentMentorId).toLowerCase());
+      if (mDoc && mDoc.role !== "student") {
+        ensureContact(currentStudentMentorId, mDoc.name || currentStudentMentorId, "Assigned Mentor");
+      }
+    }
+  } else if (currentRole === "mentor") {
+    // Mentor sees Admin + their Assigned Students ONLY
+    ensureContact("admin", "International Office (Admin)", "Admin Support");
+    allRoster
+      .filter(
+        (r) =>
+          r.role === "student" &&
+          cleanMentorRefValue(r.mentorId).toLowerCase() === String(currentUserId || "").trim().toLowerCase()
+      )
+      .forEach((stu) => {
+        ensureContact(stu._id, stu.name || stu._id, "Assigned Mentee");
+      });
+  } else if (currentRole === "admin") {
+    // Admin sees Mentors ONLY — NEVER Students!
+    allRoster
+      .filter((r) => r.role === "mentor")
+      .forEach((m) => ensureContact(m._id, m.name || m._id, "Mentor"));
+  }
+
+  // Merge chronological chat history & unread counts ONLY for authorized channels
+  allChats.forEach((chatDoc) => {
+    const chIdLower = String(chatDoc._id || "").toLowerCase();
+    const parts = chIdLower.split("__").filter(Boolean);
+    const isParticipant =
+      parts.includes(myKey) ||
+      (Array.isArray(chatDoc.participants) &&
+        chatDoc.participants.some((p) => String(p).toLowerCase() === myKey));
+    if (!isParticipant) return;
+
+    let otherKey = parts.find((p) => p && p !== myKey) || "";
+    if (!otherKey && Array.isArray(chatDoc.participants)) {
+      otherKey =
+        chatDoc.participants.map((p) => String(p).toLowerCase()).find((p) => p && p !== myKey) || "";
+    }
+    if (!otherKey) return;
+
+    // Strict Authorization Check: ignore any legacy or unauthorized channel
+    if (!isMessengerPairAuthorized(currentRole, currentUserId, otherKey, rosterById)) {
+      return;
+    }
+
+    const messages = Array.isArray(chatDoc.messages) ? chatDoc.messages : [];
+    const rPerson = rosterById.get(otherKey);
+    const inferredRole =
+      otherKey === "admin"
+        ? "Admin Support"
+        : rPerson?.role === "mentor"
+          ? currentRole === "student"
+            ? "Assigned Mentor"
+            : "Mentor"
+          : rPerson?.role === "student"
+            ? "Assigned Mentee"
+            : "Direct Message";
+
+    let inferredName =
+      otherKey === "admin" ? "International Office (Admin)" : rPerson?.name || otherKey;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (String(m.senderId || "").toLowerCase() === otherKey && m.senderName) {
+        inferredName = m.senderName;
+        break;
+      }
+      if (String(m.recipientId || "").toLowerCase() === otherKey && m.recipientName) {
+        inferredName = m.recipientName;
+        break;
+      }
+    }
+
+    ensureContact(rPerson?._id || otherKey, inferredName, inferredRole);
+    const entry = threadsMap.get(otherKey);
+    if (!entry) return;
+
+    entry.channelId = chatDoc._id;
+    entry.totalMessages = messages.length;
+
+    let unreadInThread = 0;
+    messages.forEach((m) => {
+      const senderLower = String(m.senderId || "").toLowerCase();
+      if (senderLower !== myKey) {
+        const readBy = Array.isArray(m.readBy) ? m.readBy : [];
+        if (!readBy.includes(myKey)) unreadInThread++;
+      }
+    });
+    entry.unreadCount = unreadInThread;
+
+    if (messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      entry.lastMessageText = lastMsg.text || "";
+      entry.lastSenderKey = String(lastMsg.senderId || "").toLowerCase();
+      entry.lastSentAt = lastMsg.sentAt || chatDoc.updatedAt || "";
+    }
+  });
+
+  const threads = Array.from(threadsMap.values());
+  threads.sort((a, b) => {
+    if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
+    if (b.unreadCount > 0 && a.unreadCount === 0) return 1;
+    if (a.lastSentAt && b.lastSentAt) return String(b.lastSentAt).localeCompare(String(a.lastSentAt));
+    if (a.lastSentAt) return -1;
+    if (b.lastSentAt) return 1;
+    if (a.contactKey === "admin") return -1;
+    if (b.contactKey === "admin") return 1;
+    return String(a.contactName).localeCompare(String(b.contactName));
+  });
+
+  cachedMessengerThreads = threads;
+  return threads;
+}
+
+function formatMessengerShortTime(isoStr) {
+  if (!isoStr) return "";
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if (isoStr.slice(0, 10) === todayStr) {
+    return isoStr.slice(11, 16);
+  }
+  return isoStr.slice(5, 10);
+}
+
+async function renderMessengerThreadsList() {
+  const listEl = document.getElementById("messenger-threads-list");
+  if (!listEl) return;
+
+  const threads = await buildMessengerThreadsForCurrentUser();
+  const query = (document.getElementById("messenger-search-input")?.value || "").trim().toLowerCase();
+  const myKey = getMyChatKey();
+
+  // Clear activeChatRecipientId if it is no longer authorized (e.g. mentor reassigned)
+  if (activeChatRecipientId && !isMessengerPairAuthorized(currentRole, currentUserId, activeChatRecipientId)) {
+    activeChatRecipientId = null;
+    activeChatRecipientName = "";
+  }
+  const activeKey = String(activeChatRecipientId || "").toLowerCase();
+  syncMessengerRoleChromeAndComposer(Boolean(activeChatRecipientId));
+
+  if (threads.length === 0) {
+    const emptyMsg =
+      currentRole === "student"
+        ? "Your mentor has not been assigned yet. Direct chat with your mentor unlocks once assigned."
+        : currentRole === "admin"
+          ? "No mentors registered yet. Add mentors in the People directory to message them."
+          : "No conversations available yet.";
+    listEl.innerHTML = `<div class="messenger-empty-threads">${escapeHtml(emptyMsg)}</div>`;
+    return;
+  }
+
+  const filtered = threads.filter((th) => {
+    if (!query) return true;
+    return (
+      String(th.contactName).toLowerCase().includes(query) ||
+      String(th.contactId).toLowerCase().includes(query) ||
+      String(th.roleTag).toLowerCase().includes(query) ||
+      String(th.lastMessageText).toLowerCase().includes(query)
+    );
+  });
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = `<div class="messenger-empty-threads">No matching conversations found.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = filtered
+    .map((th) => {
+      const isSelected = activeKey && th.contactKey === activeKey;
+      const isUnread = th.unreadCount > 0;
+      const isAdminAvatar = th.contactKey === "admin";
+      const snippet = th.lastMessageText
+        ? `${th.lastSenderKey === myKey ? "You: " : ""}${th.lastMessageText}`
+        : "Start a conversation...";
+      const timeLabel = formatMessengerShortTime(th.lastSentAt);
+
+      return `
+        <button
+          type="button"
+          class="messenger-thread-item ${isSelected ? "active" : ""} ${isUnread ? "unread" : ""}"
+          data-thread-id="${escapeHtml(th.contactId)}"
+          data-thread-name="${escapeHtml(th.contactName)}"
+          data-thread-role="${escapeHtml(th.roleTag)}"
+        >
+          <div class="messenger-thread-avatar ${isAdminAvatar ? "admin-avatar" : ""}">
+            ${isAdminAvatar ? "🏛️" : escapeHtml(getInitials(th.contactName))}
+            <span class="messenger-online-dot"></span>
+          </div>
+          <div class="messenger-thread-body">
+            <span class="messenger-thread-role-pill">${escapeHtml(th.roleTag)}</span>
+            <div class="messenger-thread-top">
+              <span class="messenger-thread-name">${escapeHtml(th.contactName)}</span>
+              <span class="messenger-thread-time">${escapeHtml(timeLabel)}</span>
+            </div>
+            <div class="messenger-thread-bottom">
+              <span class="messenger-thread-snippet">${escapeHtml(snippet)}</span>
+              ${
+                isUnread
+                  ? `<span class="messenger-thread-unread-pill">${th.unreadCount > 99 ? "99+" : th.unreadCount}</span>`
+                  : ""
+              }
+            </div>
+          </div>
+        </button>
+      `;
+    })
+    .join("");
+
+  listEl.querySelectorAll("[data-thread-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const cId = btn.getAttribute("data-thread-id");
+      const cName = btn.getAttribute("data-thread-name");
+      const cRole = btn.getAttribute("data-thread-role");
+      await selectMessengerConversation(cId, cName, cRole, true);
+    });
+  });
+}
+
+document.getElementById("messenger-search-input")?.addEventListener("input", () => {
+  renderMessengerThreadsList();
+});
+
+async function selectMessengerConversation(recipientId, recipientName, roleLabel = "Direct Message", openMobilePane = true) {
+  if (!recipientId) return false;
+
+  const allRoster = await dbGetAll("roster");
+  if (!isMessengerPairAuthorized(currentRole, currentUserId, recipientId, allRoster)) {
+    activeChatRecipientId = null;
+    activeChatRecipientName = "";
+    syncMessengerRoleChromeAndComposer(false);
+    await renderChatMessages();
+    showToast(
+      "Access Restricted",
+      currentRole === "student"
+        ? "Students can only message their assigned Mentor."
+        : currentRole === "admin"
+          ? "Admins do not engage in direct chat with students. Use Urgent System Warnings for student notices."
+          : "You are not authorized to message this user.",
+      "error"
+    );
+    return false;
+  }
+
+  activeChatRecipientId = recipientId;
+  activeChatRecipientName = recipientName || recipientId;
+  activeChatRecipientRoleLabel = roleLabel || "Direct Message";
+  syncMessengerRoleChromeAndComposer(true);
+
+  const drawerCard = document.getElementById("messenger-drawer");
+  const titleEl = document.getElementById("chat-modal-recipient");
+  const roleEl = document.getElementById("chat-modal-role");
+  const avatarEl = document.getElementById("chat-modal-avatar");
+  const inputEl = document.getElementById("chat-text-input");
+
+  if (titleEl) titleEl.textContent = activeChatRecipientName;
+  if (roleEl) roleEl.textContent = activeChatRecipientRoleLabel;
+  if (avatarEl) {
+    avatarEl.textContent =
+      String(recipientId).toLowerCase() === "admin"
+        ? "🏛️"
+        : getInitials(activeChatRecipientName);
+  }
+  if (drawerCard && openMobilePane) {
+    drawerCard.classList.add("mobile-thread-open");
+  }
+
+  const senderKey = getMyChatKey();
   const channelId = getChatChannelId(senderKey, activeChatRecipientId);
   await markChannelMessagesAsRead(channelId);
   await renderChatMessages();
-  await refreshBellNotifications(false);
+  await renderMessengerThreadsList();
+  await refreshMessengerUnreadBadges(false);
+
+  if (inputEl && !inputEl.disabled && typeof window !== "undefined" && window.innerWidth > 768) {
+    inputEl.focus();
+  }
+  return true;
 }
+
+async function openMessengerDrawer(recipientId = null, recipientName = null, roleLabel = "Direct Message") {
+  const modal = document.getElementById("chat-modal");
+  const drawerCard = document.getElementById("messenger-drawer");
+  if (!modal) return false;
+
+  const threads = await buildMessengerThreadsForCurrentUser();
+
+  // Block unauthorized targeted chat opens before opening or switching threads
+  if (recipientId) {
+    if (!isMessengerPairAuthorized(currentRole, currentUserId, recipientId)) {
+      showToast(
+        "Access Restricted",
+        currentRole === "student"
+          ? "Students can only message their assigned Mentor."
+          : currentRole === "admin"
+            ? "Admins cannot open direct Messenger chats with students."
+            : "You do not have permission to message this user.",
+        "error"
+      );
+      return false;
+    }
+
+    modal.style.display = "flex";
+    const matched = threads.find(
+      (t) => t.contactKey === String(recipientId).toLowerCase()
+    );
+    await selectMessengerConversation(
+      recipientId,
+      recipientName || matched?.contactName || recipientId,
+      roleLabel || matched?.roleTag || "Direct Message",
+      true
+    );
+    return true;
+  }
+
+  modal.style.display = "flex";
+  if (activeChatRecipientId && !isMessengerPairAuthorized(currentRole, currentUserId, activeChatRecipientId)) {
+    activeChatRecipientId = null;
+    activeChatRecipientName = "";
+  }
+
+  const isMobileViewport = typeof window !== "undefined" && window.innerWidth <= 768;
+  if (isMobileViewport) {
+    if (drawerCard) drawerCard.classList.remove("mobile-thread-open");
+    // For students with an assigned mentor (single 1:1 thread), pre-bind header while showing thread list or let them tap
+    await renderMessengerThreadsList();
+    await renderChatMessages();
+    await refreshMessengerUnreadBadges(false);
+  } else {
+    if (activeChatRecipientId) {
+      await selectMessengerConversation(
+        activeChatRecipientId,
+        activeChatRecipientName,
+        activeChatRecipientRoleLabel,
+        false
+      );
+    } else if (threads.length > 0) {
+      const first = threads[0];
+      await selectMessengerConversation(first.contactId, first.contactName, first.roleTag, false);
+    } else {
+      syncMessengerRoleChromeAndComposer(false);
+      await renderMessengerThreadsList();
+      await renderChatMessages();
+    }
+  }
+  return true;
+}
+
+async function openChatModal(recipientId, recipientName, roleLabel = "Direct Message") {
+  return await openMessengerDrawer(recipientId, recipientName, roleLabel);
+}
+
+function closeMessengerDrawer() {
+  const modal = document.getElementById("chat-modal");
+  const drawerCard = document.getElementById("messenger-drawer");
+  if (modal) modal.style.display = "none";
+  if (drawerCard) drawerCard.classList.remove("mobile-thread-open");
+}
+
+document.getElementById("nav-messenger-btn")?.addEventListener("click", () => {
+  openMessengerDrawer();
+});
+document.getElementById("floating-messenger-fab")?.addEventListener("click", () => {
+  openMessengerDrawer();
+});
+document.getElementById("messenger-back-btn")?.addEventListener("click", () => {
+  const drawerCard = document.getElementById("messenger-drawer");
+  if (drawerCard) drawerCard.classList.remove("mobile-thread-open");
+  renderMessengerThreadsList();
+});
+document.getElementById("chat-modal-close")?.addEventListener("click", closeMessengerDrawer);
+document.getElementById("messenger-sidebar-close")?.addEventListener("click", closeMessengerDrawer);
+document.getElementById("chat-modal")?.addEventListener("click", (e) => {
+  if (e.target && e.target.id === "chat-modal") {
+    closeMessengerDrawer();
+  }
+});
+
+document.getElementById("messenger-mark-all-read")?.addEventListener("click", async () => {
+  const myKey = getMyChatKey();
+  if (!myKey) return;
+  const allChats = await dbGetAll("chats");
+  for (const chatDoc of allChats) {
+    const channelId = String(chatDoc._id || "").toLowerCase();
+    if (channelId.split("__").includes(myKey) && isChatChannelAuthorizedForCurrentSession(channelId)) {
+      await markChannelMessagesAsRead(chatDoc._id);
+    }
+  }
+  await renderMessengerThreadsList();
+  await refreshMessengerUnreadBadges(false);
+  showToast("Messenger Updated", "All conversation threads marked as read.", "info");
+});
 
 async function renderChatMessages() {
   const listEl = document.getElementById("chat-messages-list");
-  if (!listEl || !activeChatRecipientId) return;
+  if (!listEl) return;
+  if (!activeChatRecipientId || !isMessengerPairAuthorized(currentRole, currentUserId, activeChatRecipientId)) {
+    const hintText =
+      currentRole === "student"
+        ? currentStudentMentorId
+          ? "Select your assigned Mentor from the conversation list to start chatting."
+          : "Your mentor has not been assigned yet. Once assigned, you can message your mentor 1:1 right here."
+        : currentRole === "admin"
+          ? "Select a Mentor from the directory to start a direct conversation."
+          : "Select an assigned Mentee or the International Office to start a conversation.";
 
-  const senderKey = currentRole === "admin" ? "admin" : currentUserId;
+    listEl.innerHTML = `
+      <div class="messenger-placeholder-state">
+        <span>💬</span>
+        <strong>Welcome to KSU Compass Messenger</strong>
+        <p>${escapeHtml(hintText)}</p>
+      </div>
+    `;
+    return;
+  }
+
+  const senderKey = getMyChatKey();
   const channelId = getChatChannelId(senderKey, activeChatRecipientId);
   const chatDoc = (await dbGetDoc("chats", channelId)) || { messages: [] };
-  const messages = Array.isArray(chatDoc.messages) ? chatDoc.messages : [];
+  const messages = Array.isArray(chatDoc.messages)
+    ? [...chatDoc.messages].sort((a, b) => String(a.sentAt || "").localeCompare(String(b.sentAt || "")))
+    : [];
 
   if (messages.length === 0) {
-    listEl.innerHTML = `<div style="text-align: center; padding: 30px; color: #94a3b8; font-size: 13px;">No messages yet. Start the conversation below!</div>`;
+    listEl.innerHTML = `
+      <div class="messenger-placeholder-state">
+        <span>👋</span>
+        <strong>Say hello to ${escapeHtml(activeChatRecipientName || activeChatRecipientId)}</strong>
+        <p>Messages are saved chronologically with timestamps and never interrupt with blocking popups.</p>
+      </div>
+    `;
     return;
   }
 
   listEl.innerHTML = messages
     .map((m) => {
       const isMine = String(m.senderId).toLowerCase() === String(senderKey).toLowerCase();
+      const stamp = m.sentAt ? m.sentAt.slice(5, 16).replace("T", " ") : "";
+      const senderLabel = isMine ? "You" : m.senderName || m.senderId;
       return `
-        <div style="display: flex; flex-direction: column; align-items: ${isMine ? "flex-end" : "flex-start"}; margin-bottom: 10px;">
-          <div style="max-width: 78%; padding: 9px 13px; border-radius: 12px; font-size: 13px; background: ${
-            isMine ? "#3b50b2" : "#f1f5f9"
-          }; color: ${isMine ? "#ffffff" : "#0f172a"};">
-            ${escapeHtml(m.text)}
-          </div>
-          <span style="font-size: 10.5px; color: #94a3b8; margin-top: 3px;">
-            ${escapeHtml(m.senderName || m.senderId)} · ${escapeHtml((m.sentAt || "").slice(11, 16))}
-          </span>
+        <div class="chat-bubble-row ${isMine ? "mine" : "theirs"}">
+          <div class="chat-bubble-pill">${escapeHtml(m.text)}</div>
+          <span class="chat-bubble-meta">${escapeHtml(senderLabel)} · ${escapeHtml(stamp)}</span>
         </div>
       `;
     })
@@ -4940,36 +7039,143 @@ document.getElementById("chat-input-form")?.addEventListener("submit", async (e)
   const text = (inputEl?.value || "").trim();
   if (!text || !activeChatRecipientId) return;
 
+  // Enforce strict authorization before creating or appending to any chat channel
+  if (!isMessengerPairAuthorized(currentRole, currentUserId, activeChatRecipientId)) {
+    showToast("Access Restricted", "You do not have permission to message this recipient.", "error");
+    return;
+  }
+
   if (inputEl) inputEl.value = "";
   const senderKey = currentRole === "admin" ? "admin" : currentUserId;
   const channelId = getChatChannelId(senderKey, activeChatRecipientId);
+  const nowIso = new Date().toISOString();
 
-  const chatDoc = (await dbGetDoc("chats", channelId)) || { messages: [] };
-  const messages = Array.isArray(chatDoc.messages) ? chatDoc.messages : [];
-  messages.push({
-    senderId: senderKey,
-    senderName: currentRole === "admin" ? "International Office" : currentUserName,
-    recipientId: activeChatRecipientId,
-    recipientName: activeChatRecipientName,
-    text,
-    readBy: [String(senderKey).toLowerCase()],
-    sentAt: new Date().toISOString()
-  });
+  try {
+    const chatDoc = (await dbGetDoc("chats", channelId)) || { messages: [] };
+    const messages = Array.isArray(chatDoc.messages) ? chatDoc.messages : [];
+    messages.push({
+      senderId: senderKey,
+      senderName: currentRole === "admin" ? "International Office" : currentUserName,
+      recipientId: activeChatRecipientId,
+      recipientName: activeChatRecipientName,
+      text,
+      readBy: [String(senderKey).toLowerCase()],
+      sentAt: nowIso
+    });
 
-  await dbSetDoc("chats", channelId, {
-    participants: [String(senderKey).toLowerCase(), String(activeChatRecipientId).toLowerCase()],
-    messages,
-    updatedAt: new Date().toISOString()
-  });
+    await dbSetDoc("chats", channelId, {
+      participants: [String(senderKey).toLowerCase(), String(activeChatRecipientId).toLowerCase()],
+      messages,
+      updatedAt: nowIso
+    });
 
-  await renderChatMessages();
-  await refreshBellNotifications(false);
+    await renderChatMessages();
+    await renderMessengerThreadsList();
+    await refreshMessengerUnreadBadges(false);
+  } catch (err) {
+    showToast("Message Blocked", err.message || "Unauthorized messaging channel.", "error");
+  }
 });
 
-document.getElementById("chat-modal-close")?.addEventListener("click", () => {
-  const modal = document.getElementById("chat-modal");
-  if (modal) modal.style.display = "none";
-});
+// System B Unread Counter & Lightweight Toast Refresh (Strictly NO Blocking Popups & Authorized Channels Only!)
+async function refreshMessengerUnreadBadges(showToastOnNew = false) {
+  const myKey = getMyChatKey();
+  const navBadge = document.getElementById("nav-messenger-unread-badge");
+  const fabBadge = document.getElementById("floating-messenger-unread-badge");
+  const studentMentorDot = document.getElementById("student-mentor-unread-dot");
+  const mentorAdminDot = document.getElementById("mentor-admin-unread-dot");
+
+  if (!myKey) {
+    if (navBadge) navBadge.style.display = "none";
+    if (fabBadge) fabBadge.style.display = "none";
+    if (studentMentorDot) studentMentorDot.style.display = "none";
+    if (mentorAdminDot) mentorAdminDot.style.display = "none";
+    return;
+  }
+
+  const allChats = await dbGetAll("chats");
+  let unreadCount = 0;
+  let unreadFromMentor = 0;
+  let unreadFromAdmin = 0;
+
+  allChats.forEach((chatDoc) => {
+    const channelId = String(chatDoc._id || "").toLowerCase();
+    if (!isChatChannelAuthorizedForCurrentSession(channelId)) return;
+
+    const parts = channelId.split("__").filter(Boolean);
+    const isParticipant =
+      parts.includes(myKey) ||
+      (Array.isArray(chatDoc.participants) &&
+        chatDoc.participants.some((p) => String(p).toLowerCase() === myKey));
+    if (!isParticipant) return;
+
+    const messages = Array.isArray(chatDoc.messages) ? chatDoc.messages : [];
+    messages.forEach((m, idx) => {
+      const senderLower = String(m.senderId || "").toLowerCase();
+      if (senderLower === myKey) return;
+      if (!isMessengerPairAuthorized(currentRole, currentUserId, senderLower)) return;
+
+      const readBy = Array.isArray(m.readBy) ? m.readBy : [];
+      const isUnread = !readBy.includes(myKey);
+      const sig = `${channelId}_${idx}_${m.sentAt || ""}`;
+
+      if (isUnread) {
+        unreadCount++;
+        if (currentStudentMentorId && senderLower === String(currentStudentMentorId).toLowerCase()) {
+          unreadFromMentor++;
+        }
+        if (currentRole === "mentor" && senderLower === "admin") {
+          unreadFromAdmin++;
+        }
+
+        if (showToastOnNew && !knownUnreadMsgSignatures.has(sig)) {
+          const chatModal = document.getElementById("chat-modal");
+          const isChatOpenWithSender =
+            chatModal?.style.display === "flex" &&
+            String(activeChatRecipientId || "").toLowerCase() === senderLower;
+
+          if (!isChatOpenWithSender) {
+            // Lightweight non-blocking toast preview ONLY — never opens a blocking modal!
+            showToast(
+              `💬 ${m.senderName || m.senderId}`,
+              m.text || "New message in Messenger.",
+              "info"
+            );
+          }
+        }
+        knownUnreadMsgSignatures.add(sig);
+      }
+    });
+  });
+
+  const badgeLabel = unreadCount > 99 ? "99+" : String(unreadCount);
+  [navBadge, fabBadge].forEach((badgeEl) => {
+    if (!badgeEl) return;
+    if (unreadCount > 0) {
+      badgeEl.style.display = "inline-flex";
+      badgeEl.textContent = badgeLabel;
+    } else {
+      badgeEl.style.display = "none";
+      badgeEl.textContent = "0";
+    }
+  });
+
+  if (studentMentorDot) {
+    studentMentorDot.style.display =
+      currentRole === "student" && currentStudentMentorId && unreadFromMentor > 0 ? "inline-block" : "none";
+  }
+  if (mentorAdminDot) {
+    mentorAdminDot.style.display = currentRole === "mentor" && unreadFromAdmin > 0 ? "inline-block" : "none";
+  }
+}
+
+// Unified Notification Refresh Helper (Refreshes System A Bell + System B Messenger Badges)
+async function refreshBellNotifications(showToastOnNew = false) {
+  await Promise.all([
+    renderUrgentAlertsBellDropdown(),
+    refreshMessengerUnreadBadges(showToastOnNew)
+  ]);
+}
 
 // Real-Time Cross-Tab & Periodic Notification + Portal Config Sync
 let lastSyncedConfigUpdatedAt = null;
@@ -4982,7 +7188,6 @@ async function syncLivePortalConfig(forceReloadView = false) {
   lastSyncedConfigUpdatedAt = cfgUpdatedAt;
 
   if (!forceReloadView && !changed) {
-    // Still refresh countdown text on student view every tick in case a minute/day boundary rolled over
     if (currentRole === "student" && currentUserId) {
       const checklistDoc = (await dbGetDoc("checklists", currentUserId)) || {};
       renderStudentArcDeadlineAndBanner(checklistDoc.tasks || {}, checklistDoc.taskDocs || {}, cfg);
@@ -4993,6 +7198,7 @@ async function syncLivePortalConfig(forceReloadView = false) {
   if (currentRole === "student" && currentUserId) {
     const checklistDoc = (await dbGetDoc("checklists", currentUserId)) || {};
     renderStudentArcDeadlineAndBanner(checklistDoc.tasks || {}, checklistDoc.taskDocs || {}, cfg);
+    await checkAndDisplayUrgentSystemAlerts(true);
   } else if (currentRole === "mentor" && currentUserId) {
     const urgentBanner = document.getElementById("student-arc-urgent-banner");
     if (urgentBanner) urgentBanner.style.display = "none";
@@ -5004,7 +7210,7 @@ async function syncLivePortalConfig(forceReloadView = false) {
 
 window.addEventListener("storage", (e) => {
   if (e.key && e.key.startsWith(STORAGE_PREFIX) && currentRole) {
-    refreshBellNotifications(true);
+    refreshMessengerUnreadBadges(true);
     if (e.key === STORAGE_PREFIX + "settings") {
       syncLivePortalConfig(true);
     } else if (e.key === STORAGE_PREFIX + "monthlyReports" && currentRole === "admin") {
@@ -5013,17 +7219,25 @@ window.addEventListener("storage", (e) => {
       loadAdminDashboard();
     }
     const chatModal = document.getElementById("chat-modal");
-    if (chatModal && chatModal.style.display === "flex" && activeChatRecipientId) {
-      const senderKey = currentRole === "admin" ? "admin" : currentUserId;
-      const channelId = getChatChannelId(senderKey, activeChatRecipientId);
-      markChannelMessagesAsRead(channelId).then(() => renderChatMessages());
+    if (chatModal && chatModal.style.display === "flex") {
+      if (activeChatRecipientId) {
+        const senderKey = getMyChatKey();
+        const channelId = getChatChannelId(senderKey, activeChatRecipientId);
+        markChannelMessagesAsRead(channelId).then(async () => {
+          await renderChatMessages();
+          await renderMessengerThreadsList();
+          await refreshMessengerUnreadBadges(false);
+        });
+      } else {
+        renderMessengerThreadsList();
+      }
     }
   }
 });
 
 setInterval(() => {
   if (currentRole) {
-    refreshBellNotifications(true);
+    refreshMessengerUnreadBadges(true);
     syncLivePortalConfig(false);
   }
 }, 4000);
