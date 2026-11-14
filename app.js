@@ -10,7 +10,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
 import {
   doc,
   setDoc,
@@ -21,7 +21,7 @@ import {
   query,
   orderBy,
   onSnapshot
-} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 import { t, getLang, setLang, onLangChange, getTaskLabel } from "./i18n.js";
 
 // ============================================================
@@ -1402,12 +1402,10 @@ async function handleIdLogin(role) {
   const canonicalId = rosterEntry._id || rawId;
   const expectedDefaultPw = getDefaultPasswordForId(canonicalId);
   const expectedRawPw = getDefaultPasswordForId(rawId);
-  const customPw = rosterEntry.password || null;
 
   const isPasswordValid =
     password === expectedDefaultPw ||
-    password === expectedRawPw ||
-    (customPw && password === customPw);
+    password === expectedRawPw;
 
   // Also attempt Firebase Auth login in background if possible, or verify password
   let firebaseLoggedIn = false;
@@ -1469,7 +1467,7 @@ document.getElementById("mentor-login-btn")?.addEventListener("click", (e) => {
   handleIdLogin("mentor");
 });
 
-// Admin Login & Sign Up
+// Admin Login
 document.getElementById("admin-login-btn")?.addEventListener("click", async (e) => {
   e.preventDefault();
   const email = (document.getElementById("admin-email")?.value || "").trim();
@@ -1485,11 +1483,6 @@ document.getElementById("admin-login-btn")?.addEventListener("click", async (e) 
   try {
     const cred = await signInWithEmailAndPassword(auth, email, password);
     const uid = cred.user.uid;
-    await dbSetDoc("admins", uid, {
-      email,
-      role: "admin",
-      lastLoginAt: new Date().toISOString()
-    });
 
     const adminName = email.split("@")[0] || "Admin";
     currentUserId = uid;
@@ -1504,43 +1497,6 @@ document.getElementById("admin-login-btn")?.addEventListener("click", async (e) 
     showToast("Welcome back!", "Signed in to the International Office portal.", "success");
   } catch (err) {
     if (errEl) errEl.textContent = err.message || "Admin sign-in failed.";
-  }
-});
-
-document.getElementById("admin-signup-btn")?.addEventListener("click", async (e) => {
-  e.preventDefault();
-  const email = (document.getElementById("admin-email")?.value || "").trim();
-  const password = (document.getElementById("admin-password")?.value || "").trim();
-  const errEl = document.getElementById("admin-error");
-  if (errEl) errEl.textContent = "";
-
-  if (!email || !password || password.length < 6) {
-    if (errEl) errEl.textContent = "Enter a valid email and a password of at least 6 characters.";
-    return;
-  }
-
-  try {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    const uid = cred.user.uid;
-    await dbSetDoc("admins", uid, {
-      email,
-      role: "admin",
-      createdAt: new Date().toISOString()
-    });
-
-    const adminName = email.split("@")[0] || "Admin";
-    currentUserId = uid;
-    currentUserName = adminName;
-    setActiveSession({ role: "admin", id: uid, name: adminName, email });
-
-    if (navUserName) navUserName.textContent = adminName;
-    if (userAvatarInitials) userAvatarInitials.textContent = getInitials(adminName);
-
-    showSection("admin");
-    await loadAdminDashboard();
-    showToast("Admin Account Created", "Welcome to KSU Compass Admin Portal!", "success");
-  } catch (err) {
-    if (errEl) errEl.textContent = err.message || "Could not create admin account.";
   }
 });
 
