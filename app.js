@@ -9,7 +9,11 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  deleteUser,
+  updatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential
 } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
 import {
   doc,
@@ -34,11 +38,15 @@ const CYCLE_MAX_MONTHS = 3;           // 3-month cycle structure
 const MONTH_MAX_SESSIONS = 2;         // 2 reports/sessions per month
 const DEFAULT_CYCLE_MONTHS = ["2026-10", "2026-11", "2026-12"]; // Standard 3-month reporting cycle
 const ARC_WARNING_COOLDOWN_MS = 30000; // 30s debounce/cooldown window against duplicate clicks
+const OFFICE_CONTACT_INFO =
+  "Please visit the Global Office (Building 30, Room 201-4) with your student or mentor ID to reset your password.";
 
 let currentRole = null;       // 'student' | 'mentor' | 'admin'
 let currentUserId = null;     // studentId, mentorId, or admin uid
 let currentUserName = "";
 let currentStudentMentorId = null;
+let isLoginInProgress = false;
+let passwordBannerDismissedThisSession = false;
 
 // Admin cached state (Always starts empty / 0)
 let adminRosterStudents = [];
@@ -278,7 +286,7 @@ function cleanMentorRefValue(val) {
   if (lower === "none" || lower === "unassigned" || lower === "null" || lower === "undefined" || lower === "--") {
     return "";
   }
-  return s;
+  return lower;
 }
 
 // Strict Messaging Permission Matrix Evaluator (Frontend UI + API/Persistence Guard)
@@ -295,12 +303,6 @@ function isMessengerPairAuthorized(initiatorRole, initiatorId, recipientId, rost
   }
 
   const rosterByKey = new Map();
-  const legacyMentors = getLocalCollection("mentors") || {};
-  Object.entries(legacyMentors).forEach(([id, data]) => {
-    if (id && data) {
-      rosterByKey.set(String(id).toLowerCase(), { role: "mentor", ...data, _id: id });
-    }
-  });
 
   if (Array.isArray(rosterArrayOrMap)) {
     rosterArrayOrMap.forEach((p) => {
@@ -528,25 +530,6 @@ async function dbDeleteDoc(colName, docId) {
   }
 }
 
-function getActiveSession() {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_PREFIX + "session");
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-function setActiveSession(sessionObj) {
-  try {
-    if (!sessionObj) {
-      sessionStorage.removeItem(STORAGE_PREFIX + "session");
-    } else {
-      sessionStorage.setItem(STORAGE_PREFIX + "session", JSON.stringify(sessionObj));
-    }
-  } catch (e) {}
-}
-
 // ============================================================
 // 3. DOM ELEMENTS & UTILITIES
 // ============================================================
@@ -605,7 +588,7 @@ function getInitials(name) {
 }
 
 function getDefaultPasswordForId(id) {
-  const clean = String(id || "").trim();
+  const clean = String(id || "").trim().toLowerCase();
   if (!clean) return "@ks";
   return `${clean.slice(1)}@ks`;
 }
@@ -626,7 +609,7 @@ function normalizeMentorIdValue(rawVal) {
   ) {
     return "";
   }
-  return trimmed;
+  return lower;
 }
 
 function getActiveMentorIdSet(mentorsList = adminRosterMentors) {
@@ -1262,6 +1245,12 @@ function showSection(section) {
     if (mentorWarnBanner) mentorWarnBanner.style.display = "none";
   }
 
+  // Suppress password reminder banner on login or admin view
+  if (section === "login" || section === "admin") {
+    const pwBanner = document.getElementById("password-reminder-banner");
+    if (pwBanner) pwBanner.style.display = "none";
+  }
+
   const notifDropdown = document.getElementById("nav-notifications-dropdown");
   if (notifDropdown) notifDropdown.style.display = "none";
   closeMobileNavDrawer();
@@ -1278,6 +1267,8 @@ function showSection(section) {
     if (chatOverlay) chatOverlay.style.display = "none";
     const urgentModal = document.getElementById("urgent-system-alert-modal");
     if (urgentModal) urgentModal.style.display = "none";
+    const cpModal = document.getElementById("change-password-modal");
+    if (cpModal) cpModal.style.display = "none";
   }
 
   currentRole = nextRole;
@@ -1289,6 +1280,28 @@ function showSection(section) {
     setTimeout(() => {
       refreshBellNotifications(false);
     }, 60);
+  }
+}
+
+async function checkAndRenderPasswordReminderBanner(personId) {
+  const bannerEl = document.getElementById("password-reminder-banner");
+  if (!bannerEl) return;
+
+  if (
+    !personId ||
+    (currentRole !== "student" && currentRole !== "mentor") ||
+    passwordBannerDismissedThisSession
+  ) {
+    bannerEl.style.display = "none";
+    return;
+  }
+
+  try {
+    const snap = await getDoc(doc(db, "userSettings", String(personId).toLowerCase()));
+    const passwordChanged = snap.exists() && snap.data()?.passwordChanged === true;
+    bannerEl.style.display = passwordChanged ? "none" : "flex";
+  } catch (_) {
+    bannerEl.style.display = "flex";
   }
 }
 
@@ -1323,19 +1336,118 @@ document.querySelectorAll(".auth-password-toggle").forEach((btn) => {
   });
 });
 
-// Help / Forgot Password Links
+// Help / Forgot Password Links (Never reveals password formula; shows OFFICE_CONTACT_INFO)
+function openForgotPasswordModal() {
+  const modal = document.getElementById("forgot-password-modal");
+  const textEl = document.getElementById("forgot-password-contact-text");
+  if (textEl) textEl.textContent = OFFICE_CONTACT_INFO;
+  if (modal) modal.style.display = "flex";
+}
+
 ["btn-open-login-help", "link-student-forgot", "link-mentor-forgot"].forEach((id) => {
   document.getElementById(id)?.addEventListener("click", (e) => {
     e.preventDefault();
-    showToast(
-      "Login & Password Help",
-      "Students & Mentors: Use your ID (e.g. a2024691204) and initial password: ID without first letter + @ks (e.g. 2024691204@ks).",
-      "info"
-    );
+    openForgotPasswordModal();
   });
 });
 
-// Remembered IDs
+["forgot-password-modal-close", "forgot-password-modal-ok"].forEach((id) => {
+  document.getElementById(id)?.addEventListener("click", () => {
+    const modal = document.getElementById("forgot-password-modal");
+    if (modal) modal.style.display = "none";
+  });
+});
+
+// Password Reminder Banner & Change Password Modal
+document.getElementById("btn-banner-dismiss-password")?.addEventListener("click", () => {
+  passwordBannerDismissedThisSession = true;
+  const bannerEl = document.getElementById("password-reminder-banner");
+  if (bannerEl) bannerEl.style.display = "none";
+});
+
+document.querySelectorAll(".change-password-trigger-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    closeMobileNavDrawer();
+    const formEl = document.getElementById("change-password-form");
+    const errEl = document.getElementById("cp-error");
+    if (formEl) formEl.reset();
+    if (errEl) errEl.textContent = "";
+    const modal = document.getElementById("change-password-modal");
+    if (modal) modal.style.display = "flex";
+  });
+});
+
+["change-password-modal-close", "change-password-cancel-btn"].forEach((id) => {
+  document.getElementById(id)?.addEventListener("click", () => {
+    const modal = document.getElementById("change-password-modal");
+    if (modal) modal.style.display = "none";
+  });
+});
+
+document.getElementById("change-password-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const currentPw = (document.getElementById("cp-current-password")?.value || "").trim();
+  const newPw = (document.getElementById("cp-new-password")?.value || "").trim();
+  const confirmPw = (document.getElementById("cp-confirm-password")?.value || "").trim();
+  const errEl = document.getElementById("cp-error");
+  if (errEl) errEl.textContent = "";
+
+  if (!currentPw || !newPw || !confirmPw) {
+    if (errEl) errEl.textContent = "Please fill in all password fields.";
+    return;
+  }
+  if (newPw.length < 10) {
+    if (errEl) errEl.textContent = "New password must be at least 10 characters long.";
+    return;
+  }
+  if (currentUserId && newPw.toLowerCase() === String(currentUserId).toLowerCase()) {
+    if (errEl) errEl.textContent = "New password must not be the same as your ID.";
+    return;
+  }
+  if (newPw !== confirmPw) {
+    if (errEl) errEl.textContent = "New password and confirmation do not match.";
+    return;
+  }
+
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    if (errEl) errEl.textContent = "You must be signed in to change your password.";
+    return;
+  }
+
+  try {
+    const credential = EmailAuthProvider.credential(user.email, currentPw);
+    await reauthenticateWithCredential(user, credential);
+    await updatePassword(user, newPw);
+
+    if ((currentRole === "student" || currentRole === "mentor") && currentUserId) {
+      await setDoc(
+        doc(db, "userSettings", String(currentUserId).toLowerCase()),
+        {
+          passwordChanged: true,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      );
+    }
+
+    const bannerEl = document.getElementById("password-reminder-banner");
+    if (bannerEl) bannerEl.style.display = "none";
+    const modal = document.getElementById("change-password-modal");
+    if (modal) modal.style.display = "none";
+    document.getElementById("change-password-form")?.reset();
+    showToast("Password Updated", "Your password has been changed.", "success");
+  } catch (err) {
+    if (errEl) {
+      errEl.textContent =
+        err?.code === "auth/wrong-password" || err?.code === "auth/invalid-credential"
+          ? "Current password is incorrect."
+          : err?.message || "Could not update password.";
+    }
+  }
+});
+
+// Remembered IDs (Strictly ID only)
 try {
   const savedStudentId = localStorage.getItem("ksu_saved_student_id");
   if (savedStudentId && document.getElementById("student-id")) {
@@ -1349,7 +1461,7 @@ try {
   }
 } catch (e) {}
 
-// Student & Mentor Login Handler (Supports both Firebase Auth and Local Roster)
+// Student & Mentor Login Handler
 async function handleIdLogin(role) {
   const idInput = document.getElementById(`${role}-id`);
   const pwInput = document.getElementById(`${role}-password`);
@@ -1357,103 +1469,92 @@ async function handleIdLogin(role) {
   const saveCb = document.getElementById(`${role}-save-id`);
 
   if (errEl) errEl.textContent = "";
-  const rawId = (idInput?.value || "").trim();
+  const personId = (idInput?.value || "").trim().toLowerCase();
   const password = (pwInput?.value || "").trim();
 
-  if (!rawId || !password) {
+  if (!personId || !password) {
     if (errEl) errEl.textContent = "Please enter both your ID and password.";
     return;
   }
 
   try {
     if (saveCb?.checked) {
-      localStorage.setItem(`ksu_saved_${role}_id`, rawId);
+      localStorage.setItem(`ksu_saved_${role}_id`, personId);
     } else {
       localStorage.removeItem(`ksu_saved_${role}_id`);
     }
   } catch (e) {}
 
-  // Look up in dual-engine roster (case-insensitive match)
-  const allRoster = await dbGetAll("roster");
-  let rosterEntry = allRoster.find(
-    (item) => String(item._id).toLowerCase() === rawId.toLowerCase()
-  );
+  const email = `${personId}@ksu.local`;
+  const initialPassword = getDefaultPasswordForId(personId);
+  let wasJustCreated = false;
+  isLoginInProgress = true;
 
-  // Also check direct doc lookup
-  if (!rosterEntry) {
-    const direct = await dbGetDoc("roster", rawId) || await dbGetDoc("roster", rawId.toLowerCase());
-    if (direct) rosterEntry = { ...direct, _id: rawId };
-  }
-
-  if (!rosterEntry) {
-    if (errEl) {
-      errEl.textContent = `ID "${rawId}" was not found in the roster. Please ask the Admin to add your ID first.`;
-    }
-    return;
-  }
-
-  if (rosterEntry.role && rosterEntry.role !== role) {
-    if (errEl) {
-      errEl.textContent = `This ID is registered as a ${rosterEntry.role}. Please switch to the ${rosterEntry.role} tab.`;
-    }
-    return;
-  }
-
-  const canonicalId = rosterEntry._id || rawId;
-  const expectedDefaultPw = getDefaultPasswordForId(canonicalId);
-  const expectedRawPw = getDefaultPasswordForId(rawId);
-
-  const isPasswordValid =
-    password === expectedDefaultPw ||
-    password === expectedRawPw;
-
-  // Also attempt Firebase Auth login in background if possible, or verify password
-  let firebaseLoggedIn = false;
-  const candidateEmails = [
-    `${canonicalId.toLowerCase()}@ksu.local`,
-    `${canonicalId.toLowerCase()}@ksu.${role}`
-  ];
-
-  for (const email of candidateEmails) {
+  try {
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      firebaseLoggedIn = true;
-      break;
-    } catch (e) {
+    } catch (signInErr) {
+      const code = signInErr?.code || "";
       if (
-        (e.code === "auth/user-not-found" || e.code === "auth/invalid-credential") &&
-        isPasswordValid
+        (code === "auth/user-not-found" || code === "auth/invalid-credential") &&
+        password === initialPassword
       ) {
         try {
           await createUserWithEmailAndPassword(auth, email, password);
-          firebaseLoggedIn = true;
-          break;
-        } catch (_) {}
+          wasJustCreated = true;
+        } catch (createErr) {
+          // Treat auth/email-already-in-use or any creation failure as wrong password
+          if (errEl) errEl.textContent = "Incorrect ID or password.";
+          return;
+        }
+      } else {
+        if (errEl) errEl.textContent = "Incorrect ID or password.";
+        return;
       }
     }
-  }
 
-  if (!isPasswordValid && !firebaseLoggedIn) {
-    if (errEl) {
-      errEl.textContent = `Incorrect password. Initial password for ${canonicalId} is: ${expectedDefaultPw}`;
+    // Immediately verify roster/{personId} and role match in Firestore
+    let rosterEntry = null;
+    try {
+      const rosterSnap = await getDoc(doc(db, "roster", personId));
+      if (rosterSnap.exists()) {
+        rosterEntry = rosterSnap.data();
+      }
+    } catch (_) {
+      rosterEntry = null;
     }
-    return;
-  }
 
-  const displayName = rosterEntry.name || canonicalId;
-  currentUserId = canonicalId;
-  currentUserName = displayName;
-  setActiveSession({ role, id: canonicalId, name: displayName });
+    if (!rosterEntry || rosterEntry.role !== role) {
+      if (wasJustCreated && auth.currentUser) {
+        try {
+          await deleteUser(auth.currentUser);
+        } catch (_) {}
+      }
+      try {
+        await signOut(auth);
+      } catch (_) {}
+      if (errEl) errEl.textContent = "Incorrect ID or password.";
+      return;
+    }
 
-  if (navUserName) navUserName.textContent = displayName;
-  if (userAvatarInitials) userAvatarInitials.textContent = getInitials(displayName);
+    const displayName = rosterEntry.name || personId;
+    currentUserId = personId;
+    currentUserName = displayName;
 
-  if (role === "student") {
-    showSection("student");
-    await loadStudentDashboard(canonicalId, displayName);
-  } else {
-    showSection("mentor");
-    await loadMentorDashboard(canonicalId, displayName);
+    if (navUserName) navUserName.textContent = displayName;
+    if (userAvatarInitials) userAvatarInitials.textContent = getInitials(displayName);
+    if (pwInput) pwInput.value = "";
+
+    if (role === "student") {
+      showSection("student");
+      await loadStudentDashboard(personId, displayName);
+    } else {
+      showSection("mentor");
+      await loadMentorDashboard(personId, displayName);
+    }
+    await checkAndRenderPasswordReminderBanner(personId);
+  } finally {
+    isLoginInProgress = false;
   }
 }
 
@@ -1480,36 +1581,74 @@ document.getElementById("admin-login-btn")?.addEventListener("click", async (e) 
     return;
   }
 
+  isLoginInProgress = true;
   try {
     const cred = await signInWithEmailAndPassword(auth, email, password);
     const uid = cred.user.uid;
 
-    const adminName = email.split("@")[0] || "Admin";
+    const adminSnap = await getDoc(doc(db, "admins", uid));
+    if (!adminSnap.exists()) {
+      await signOut(auth);
+      if (errEl) errEl.textContent = "This account is not authorized as an administrator.";
+      return;
+    }
+
+    const adminData = adminSnap.data() || {};
+    const adminName = adminData.name || email.split("@")[0] || "Admin";
     currentUserId = uid;
     currentUserName = adminName;
-    setActiveSession({ role: "admin", id: uid, name: adminName, email });
 
     if (navUserName) navUserName.textContent = adminName;
     if (userAvatarInitials) userAvatarInitials.textContent = getInitials(adminName);
+    const pwEl = document.getElementById("admin-password");
+    if (pwEl) pwEl.value = "";
 
     showSection("admin");
     await loadAdminDashboard();
     showToast("Welcome back!", "Signed in to the International Office portal.", "success");
   } catch (err) {
-    if (errEl) errEl.textContent = err.message || "Admin sign-in failed.";
+    if (errEl) {
+      errEl.textContent =
+        err?.code === "auth/invalid-credential" || err?.code === "auth/wrong-password" || err?.code === "auth/user-not-found"
+          ? "Incorrect email or password."
+          : err?.message || "Admin sign-in failed.";
+    }
+  } finally {
+    isLoginInProgress = false;
   }
 });
+
+function clearAllCachedUserData() {
+  currentRole = null;
+  currentUserId = null;
+  currentUserName = "";
+  currentStudentMentorId = null;
+  passwordBannerDismissedThisSession = false;
+  adminRosterStudents = [];
+  adminRosterMentors = [];
+  adminChecklistsMap = {};
+  adminReportsList = [];
+  adminAnnouncementsList = [];
+  selectedRosterIds.clear();
+  cachedMessengerThreads = [];
+  activeChatRecipientId = null;
+  activeChatRecipientName = "";
+  if (activeChatUnsubscribe) {
+    activeChatUnsubscribe();
+    activeChatUnsubscribe = null;
+  }
+  const pwBanner = document.getElementById("password-reminder-banner");
+  if (pwBanner) pwBanner.style.display = "none";
+  ["student-password", "mentor-password", "admin-password"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+}
 
 // Logout Button
 document.querySelectorAll(".logout-btn").forEach((btn) => {
   btn.addEventListener("click", async () => {
-    setActiveSession(null);
-    currentRole = null;
-    currentUserId = null;
-    if (activeChatUnsubscribe) {
-      activeChatUnsubscribe();
-      activeChatUnsubscribe = null;
-    }
+    clearAllCachedUserData();
     try {
       await signOut(auth);
     } catch (_) {}
@@ -1517,38 +1656,81 @@ document.querySelectorAll(".logout-btn").forEach((btn) => {
   });
 });
 
-// Restore Session on Load
+// Restore Session on Load (Strictly derived from Firestore roster/{personId} or admins/{uid})
 onAuthStateChanged(auth, async (user) => {
-  const savedSession = getActiveSession();
-  if (savedSession && savedSession.role) {
-    currentUserId = savedSession.id;
-    currentUserName = savedSession.name || savedSession.id;
-    if (navUserName) navUserName.textContent = currentUserName;
-    if (userAvatarInitials) userAvatarInitials.textContent = getInitials(currentUserName);
+  if (isLoginInProgress) return;
 
-    showSection(savedSession.role);
-    if (savedSession.role === "admin") await loadAdminDashboard();
-    else if (savedSession.role === "mentor") await loadMentorDashboard(currentUserId, currentUserName);
-    else if (savedSession.role === "student") await loadStudentDashboard(currentUserId, currentUserName);
+  if (!user || !user.email) {
+    clearAllCachedUserData();
+    showSection("login");
     return;
   }
 
-  if (user && user.email) {
-    const emailLower = user.email.toLowerCase();
-    if (!emailLower.endsWith("@ksu.local") && !emailLower.endsWith("@ksu.student") && !emailLower.endsWith("@ksu.mentor")) {
-      const adminName = user.email.split("@")[0] || "Admin";
+  const emailLower = user.email.toLowerCase();
+  if (emailLower.endsWith("@ksu.local")) {
+    const personId = emailLower.split("@")[0];
+    try {
+      const rosterSnap = await getDoc(doc(db, "roster", personId));
+      const rosterEntry = rosterSnap.exists() ? rosterSnap.data() : null;
+      if (!rosterEntry || (rosterEntry.role !== "student" && rosterEntry.role !== "mentor")) {
+        clearAllCachedUserData();
+        await signOut(auth);
+        showSection("login");
+        return;
+      }
+
+      const role = rosterEntry.role;
+      const displayName = rosterEntry.name || personId;
+      currentUserId = personId;
+      currentUserName = displayName;
+      if (navUserName) navUserName.textContent = displayName;
+      if (userAvatarInitials) userAvatarInitials.textContent = getInitials(displayName);
+
+      showSection(role);
+      if (role === "student") {
+        await loadStudentDashboard(personId, displayName);
+      } else {
+        await loadMentorDashboard(personId, displayName);
+      }
+      await checkAndRenderPasswordReminderBanner(personId);
+      return;
+    } catch (_) {
+      clearAllCachedUserData();
+      try {
+        await signOut(auth);
+      } catch (__) {}
+      showSection("login");
+      return;
+    }
+  } else {
+    try {
+      const adminSnap = await getDoc(doc(db, "admins", user.uid));
+      if (!adminSnap.exists()) {
+        clearAllCachedUserData();
+        await signOut(auth);
+        showSection("login");
+        return;
+      }
+
+      const adminData = adminSnap.data() || {};
+      const adminName = adminData.name || user.email.split("@")[0] || "Admin";
       currentUserId = user.uid;
       currentUserName = adminName;
-      setActiveSession({ role: "admin", id: user.uid, name: adminName, email: user.email });
       if (navUserName) navUserName.textContent = adminName;
       if (userAvatarInitials) userAvatarInitials.textContent = getInitials(adminName);
+
       showSection("admin");
       await loadAdminDashboard();
       return;
+    } catch (_) {
+      clearAllCachedUserData();
+      try {
+        await signOut(auth);
+      } catch (__) {}
+      showSection("login");
+      return;
     }
   }
-
-  showSection("login");
 });
 
 // ============================================================
@@ -1651,7 +1833,7 @@ async function loadStudentDashboard(studentId, studentName) {
   // Load Assigned Mentor Info (Verify mentor actually exists in active roster)
   const candidateMentorId = normalizeMentorIdValue(safeRoster.mentorId);
   const mentorDoc = candidateMentorId
-    ? (await dbGetDoc("roster", candidateMentorId)) || (await dbGetDoc("mentors", candidateMentorId))
+    ? await dbGetDoc("roster", candidateMentorId)
     : null;
 
   const mentorNameEl = document.getElementById("mentor-display-name");
@@ -1861,9 +2043,7 @@ document.getElementById("task-doc-input")?.addEventListener("change", async (e) 
       );
       return;
     }
-    const mDoc =
-      (await dbGetDoc("roster", currentStudentMentorId)) ||
-      (await dbGetDoc("mentors", currentStudentMentorId));
+    const mDoc = await dbGetDoc("roster", currentStudentMentorId);
     openChatModal(currentStudentMentorId, mDoc?.name || currentStudentMentorId, "Assigned Mentor");
   });
 });
@@ -2715,9 +2895,8 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
 // 8. ADMIN PORTAL LOGIC (SCREENSHOTS 6, 7, 8 + COMBINED FEATURES)
 // ============================================================
 async function loadAdminDashboard() {
-  const [allRoster, allMentorsCol, allChecklists, allReports, rawAnnouncements] = await Promise.all([
+  const [allRoster, allChecklists, allReports, rawAnnouncements] = await Promise.all([
     dbGetAll("roster"),
-    dbGetAll("mentors"),
     dbGetAll("checklists"),
     dbGetAll("monthlyReports"),
     dbGetAll("announcements"),
@@ -2734,20 +2913,8 @@ async function loadAdminDashboard() {
     }
   }
 
-  // Merge mentors from `mentors` collection if not already in `roster`
-  const rosterMap = {};
-  allRoster.forEach((item) => {
-    rosterMap[item._id] = item;
-  });
-  allMentorsCol.forEach((m) => {
-    if (!rosterMap[m._id]) {
-      rosterMap[m._id] = { _id: m._id, role: "mentor", name: m.name || m._id, phone: m.phone || "" };
-    }
-  });
-
-  const combinedRoster = Object.values(rosterMap);
-  adminRosterStudents = combinedRoster.filter((r) => r.role === "student");
-  adminRosterMentors = combinedRoster.filter((r) => r.role === "mentor");
+  adminRosterStudents = allRoster.filter((r) => r.role === "student");
+  adminRosterMentors = allRoster.filter((r) => r.role === "mentor");
 
   adminChecklistsMap = {};
   allChecklists.forEach((c) => {
@@ -3400,7 +3567,7 @@ function renderDetailedRosterTable() {
           <tr>
             <th style="width: 38px;"><input type="checkbox" id="roster-select-all-cb" /></th>
             <th>MENTOR</th>
-            <th>MENTOR ID &amp; INITIAL PASSWORD</th>
+            <th>MENTOR ID</th>
             <th>PHONE</th>
             <th>ASSIGNED MENTEES</th>
             <th>MONTHLY PROGRESS (${escapeHtml(currentFocusMonth)})</th>
@@ -3433,7 +3600,6 @@ function renderDetailedRosterTable() {
                   </td>
                   <td>
                     <strong>${escapeHtml(m._id)}</strong>
-                    <div style="font-size: 11px; color: #64748b;">PW: <code>${escapeHtml(getDefaultPasswordForId(m._id))}</code></div>
                   </td>
                   <td>${escapeHtml(m.phone || "—")}</td>
                   <td><span class="status-pill-badge approved">${menteeCount} students</span></td>
@@ -3462,7 +3628,7 @@ function renderDetailedRosterTable() {
           <tr>
             <th style="width: 38px;"><input type="checkbox" id="roster-select-all-cb" /></th>
             <th>STUDENT &amp; DEPARTMENT</th>
-            <th>ID &amp; INITIAL PASSWORD</th>
+            <th>STUDENT ID</th>
             <th>ASSIGNED MENTOR</th>
             <th>PROGRESS</th>
             <th>ARC STATUS</th>
@@ -3522,7 +3688,6 @@ function renderDetailedRosterTable() {
                   </td>
                   <td>
                     <strong>${escapeHtml(s._id)}</strong>
-                    <div style="font-size: 11px; color: #64748b;">PW: <code>${escapeHtml(getDefaultPasswordForId(s._id))}</code></div>
                   </td>
                   <td>
                     <select class="checklist-filter-select inline-mentor-assign" data-stu-id="${escapeHtml(s._id)}" style="font-size: 12px; padding: 4px 8px;">
@@ -3578,9 +3743,10 @@ function renderDetailedRosterTable() {
   // Bind Inline Mentor Assignment Dropdown
   listEl.querySelectorAll(".inline-mentor-assign").forEach((sel) => {
     sel.addEventListener("change", async () => {
-      const sId = sel.getAttribute("data-stu-id");
-      const newMentorId = sel.value;
+      const sId = String(sel.getAttribute("data-stu-id") || "").trim().toLowerCase();
+      const newMentorId = normalizeMentorIdValue(sel.value);
       await dbSetDoc("roster", sId, { mentorId: newMentorId });
+      await dbSetDoc("checklists", sId, { mentorId: newMentorId });
       await loadAdminDashboard();
       showToast("Mentor Updated", `Updated mentor assignment for ${sId}.`, "success");
     });
@@ -3604,7 +3770,6 @@ function renderDetailedRosterTable() {
       const idLower = String(id || "").toLowerCase();
       await dbDeleteDoc("roster", id);
       await dbDeleteDoc("checklists", id);
-      await dbDeleteDoc("mentors", id);
 
       // If a mentor was deleted, clear mentorId on any students previously assigned to them
       const affectedStudents = adminRosterStudents.filter(
@@ -3612,6 +3777,7 @@ function renderDetailedRosterTable() {
       );
       for (const stu of affectedStudents) {
         await dbSetDoc("roster", stu._id, { mentorId: "" });
+        await dbSetDoc("checklists", stu._id, { mentorId: "" });
       }
 
       selectedRosterIds.delete(id);
@@ -3645,7 +3811,6 @@ document.getElementById("btn-delete-selected-students")?.addEventListener("click
   for (const id of ids) {
     await dbDeleteDoc("roster", id);
     await dbDeleteDoc("checklists", id);
-    await dbDeleteDoc("mentors", id);
   }
 
   // Unassign any remaining students who were assigned to a deleted mentor
@@ -3656,6 +3821,7 @@ document.getElementById("btn-delete-selected-students")?.addEventListener("click
   );
   for (const stu of affectedStudents) {
     await dbSetDoc("roster", stu._id, { mentorId: "" });
+    await dbSetDoc("checklists", stu._id, { mentorId: "" });
   }
 
   selectedRosterIds.clear();
@@ -3704,25 +3870,15 @@ document.getElementById("roster-role")?.addEventListener("change", (e) => {
   if (mentorGroup) mentorGroup.style.display = role === "student" ? "block" : "none";
 });
 
-document.getElementById("roster-id")?.addEventListener("input", (e) => {
-  const val = e.target.value.trim();
-  const previewEl = document.getElementById("roster-password-preview");
-  if (previewEl) {
-    previewEl.textContent = val
-      ? `Initial login password will be: ${getDefaultPasswordForId(val)}`
-      : "Initial login password will be: (ID without first letter) + @ks";
-  }
-});
-
 document.getElementById("add-person-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const role = document.getElementById("roster-role")?.value || "student";
-  const userId = (document.getElementById("roster-id")?.value || "").trim();
+  const userId = (document.getElementById("roster-id")?.value || "").trim().toLowerCase();
   const name = (document.getElementById("roster-name")?.value || "").trim();
   const department = formatDepartmentLabel(document.getElementById("roster-department")?.value || "");
   const email = (document.getElementById("roster-email")?.value || "").trim();
   const phone = (document.getElementById("roster-phone")?.value || "").trim();
-  let mentorId = (document.getElementById("roster-mentor-id")?.value || "").trim();
+  let mentorId = normalizeMentorIdValue(document.getElementById("roster-mentor-id")?.value || "");
 
   if (!userId || !name) {
     showToast("Missing Fields", "Please enter both User ID and Full Name.", "error");
@@ -3756,11 +3912,12 @@ document.getElementById("add-person-form")?.addEventListener("submit", async (e)
           if (loadA !== loadB) return loadA - loadB;
           return String(a._id).localeCompare(String(b._id));
         });
-        mentorId = matchingMentors[0]._id;
+        mentorId = String(matchingMentors[0]._id).toLowerCase();
       }
     }
   }
 
+  const nowIso = new Date().toISOString();
   const record = {
     role,
     name,
@@ -3768,16 +3925,23 @@ document.getElementById("add-person-form")?.addEventListener("submit", async (e)
     email,
     phone: role === "mentor" ? phone : "",
     mentorId: role === "student" ? mentorId : "",
-    createdAt: new Date().toISOString()
+    createdAt: nowIso
   };
 
   await dbSetDoc("roster", userId, record);
-  if (role === "mentor") {
-    await dbSetDoc("mentors", userId, { name, phone, department, email });
-  } else {
+  if (role === "student") {
     const existingCl = await dbGetDoc("checklists", userId);
     if (!existingCl) {
-      await dbSetDoc("checklists", userId, { name, tasks: {}, taskDocs: {} });
+      await dbSetDoc("checklists", userId, {
+        name,
+        role: "student",
+        mentorId,
+        tasks: {},
+        taskDocs: {},
+        createdAt: nowIso
+      });
+    } else {
+      await dbSetDoc("checklists", userId, { mentorId });
     }
   }
 
@@ -4044,7 +4208,7 @@ async function importRosterCsvText(text) {
       const phoneIdx = headerMap.phone ?? 3;
       const emailIdx = headerMap.email;
 
-      const id = (cols[idIdx] || "").trim();
+      const id = (cols[idIdx] || "").trim().toLowerCase();
       if (!id) continue;
       const name = (cols[nameIdx] || id).trim();
       const department = deptIdx !== undefined ? formatDepartmentLabel(cols[deptIdx] || "") : "";
@@ -4076,7 +4240,7 @@ async function importRosterCsvText(text) {
       const mentorIdx = headerMap.mentor_id ?? headerMap.mentorid ?? headerMap.mentorid_or_phone;
       const phoneIdx = headerMap.phone;
 
-      const id = (cols[idIdx] || "").trim();
+      const id = (cols[idIdx] || "").trim().toLowerCase();
       if (!id) continue;
       const name = (cols[nameIdx] || id).trim();
       const email = emailIdx !== undefined ? (cols[emailIdx] || "").trim() : "";
@@ -4092,7 +4256,7 @@ async function importRosterCsvText(text) {
         }
         parsedMentors.push({ id, name, email, department, phone });
       } else {
-        const requestedMentorId = mentorIdx !== undefined ? (cols[mentorIdx] || "").trim() : "";
+        const requestedMentorId = mentorIdx !== undefined ? (cols[mentorIdx] || "").trim().toLowerCase() : "";
         parsedStudents.push({ id, name, email, department, requestedMentorId });
       }
       continue;
@@ -4101,7 +4265,7 @@ async function importRosterCsvText(text) {
     // Case 3: Role-first fallback format: Role,ID,Name,Department,Phone_or_MentorID
     const firstLower = (cols[0] || "").toLowerCase();
     if (firstLower === "mentor" || firstLower === "student") {
-      const id = cols[1] || "";
+      const id = (cols[1] || "").trim().toLowerCase();
       if (!id) continue;
       const name = cols[2] || id;
       if (firstLower === "mentor") {
@@ -4116,9 +4280,9 @@ async function importRosterCsvText(text) {
         let requestedMentorId = "";
         if (cols.length >= 5) {
           department = formatDepartmentLabel(cols[3] || "");
-          requestedMentorId = cols[4] || "";
+          requestedMentorId = (cols[4] || "").trim().toLowerCase();
         } else {
-          requestedMentorId = cols[3] || "";
+          requestedMentorId = (cols[3] || "").trim().toLowerCase();
         }
         parsedStudents.push({ id, name, email: "", department, requestedMentorId });
       }
@@ -4126,7 +4290,7 @@ async function importRosterCsvText(text) {
     }
 
     // Case 4: Positional fallback based on activeImportRole
-    const id = cols[0] || "";
+    const id = (cols[0] || "").trim().toLowerCase();
     if (!id) continue;
     const name = cols[1] || id;
     if (activeImportRole === "mentors" && cols.length >= 4 && isValidMentorPhone(cols[3])) {
@@ -4143,7 +4307,7 @@ async function importRosterCsvText(text) {
         name,
         email: cols[2] || "",
         department: formatDepartmentLabel(cols[3] || ""),
-        requestedMentorId: cols[4] || ""
+        requestedMentorId: (cols[4] || "").trim().toLowerCase()
       });
     } else if (cols.length >= 4) {
       parsedStudents.push({
@@ -4151,7 +4315,7 @@ async function importRosterCsvText(text) {
         name,
         email: "",
         department: formatDepartmentLabel(cols[2] || ""),
-        requestedMentorId: cols[3] || ""
+        requestedMentorId: (cols[3] || "").trim().toLowerCase()
       });
     } else {
       parsedStudents.push({
@@ -4159,7 +4323,7 @@ async function importRosterCsvText(text) {
         name,
         email: "",
         department: "",
-        requestedMentorId: cols[2] || ""
+        requestedMentorId: (cols[2] || "").trim().toLowerCase()
       });
     }
   }
@@ -4192,12 +4356,6 @@ async function importRosterCsvText(text) {
       mentorId: "",
       updatedAt: new Date().toISOString()
     });
-    await dbSetDoc("mentors", m.id, {
-      name: m.name || m.id,
-      phone: m.phone || "",
-      department: deptLabel,
-      email: m.email || ""
-    });
     importedMentors++;
   }
 
@@ -4229,7 +4387,7 @@ async function importRosterCsvText(text) {
     const idx = rrPointers.get(deptKey) || 0;
     const chosen = pool[idx % pool.length];
     rrPointers.set(deptKey, idx + 1);
-    return chosen._id;
+    return String(chosen._id).toLowerCase();
   };
 
   // Pass 2: Allocate and persist students
@@ -4277,7 +4435,7 @@ async function importRosterCsvText(text) {
           if (finalMentorId) autoAssignedCount++;
           else unassignedFallbackCount++;
         } else {
-          finalMentorId = targetMentor._id;
+          finalMentorId = String(targetMentor._id).toLowerCase();
           explicitValidAssignedCount++;
         }
       }
@@ -4298,6 +4456,7 @@ async function importRosterCsvText(text) {
       departmentBreakdown[deptDisplay].unassigned++;
     }
 
+    const nowIso = new Date().toISOString();
     await dbSetDoc("roster", stu.id, {
       role: "student",
       name: stu.name || stu.id,
@@ -4305,12 +4464,21 @@ async function importRosterCsvText(text) {
       department: deptLabel,
       phone: "",
       mentorId: finalMentorId,
-      updatedAt: new Date().toISOString()
+      updatedAt: nowIso
     });
 
     const existingCl = await dbGetDoc("checklists", stu.id);
     if (!existingCl) {
-      await dbSetDoc("checklists", stu.id, { name: stu.name || stu.id, tasks: {}, taskDocs: {} });
+      await dbSetDoc("checklists", stu.id, {
+        name: stu.name || stu.id,
+        role: "student",
+        mentorId: finalMentorId,
+        tasks: {},
+        taskDocs: {},
+        createdAt: nowIso
+      });
+    } else {
+      await dbSetDoc("checklists", stu.id, { mentorId: finalMentorId });
     }
     importedStudents++;
   }
@@ -4434,7 +4602,6 @@ document.getElementById("btn-export-csv")?.addEventListener("click", () => {
       "Name",
       "Email",
       "Department",
-      "InitialPassword",
       "MentorID_or_Phone",
       "CompletedTasks",
       "CompletionPct",
@@ -4449,7 +4616,6 @@ document.getElementById("btn-export-csv")?.addEventListener("click", () => {
       m.name || m._id,
       m.email || "",
       m.department || "",
-      getDefaultPasswordForId(m._id),
       m.phone || "",
       "-",
       "-",
@@ -4469,7 +4635,6 @@ document.getElementById("btn-export-csv")?.addEventListener("click", () => {
       s.name || s._id,
       s.email || "",
       s.department || "",
-      getDefaultPasswordForId(s._id),
       exportedMentorId,
       `${doneCount}/${CORE_TASKS.length}`,
       `${pct}%`,
@@ -6490,12 +6655,6 @@ async function buildMessengerThreadsForCurrentUser() {
   const allChats = await dbGetAll("chats");
 
   const rosterById = new Map();
-  const legacyMentors = getLocalCollection("mentors") || {};
-  Object.entries(legacyMentors).forEach(([id, data]) => {
-    if (id && data) {
-      rosterById.set(String(id).toLowerCase(), { role: "mentor", ...data, _id: id });
-    }
-  });
   allRoster.forEach((person) => {
     if (person && person._id) {
       rosterById.set(String(person._id).toLowerCase(), person);
