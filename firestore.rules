@@ -6,98 +6,259 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // personId() returns a value ONLY when request.auth.token.email ends with "@ksu.local"
+    function isKsuLocal() {
+      return isSignedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email.lower().split('@').size() == 2
+        && request.auth.token.email.lower().split('@')[1] == 'ksu.local';
+    }
+
+    function personId() {
+      return isKsuLocal() ? request.auth.token.email.lower().split('@')[0] : null;
+    }
+
     function isAdmin() {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    function rosterDoc(personId) {
-      return get(/databases/$(database)/documents/roster/$(personId));
+    function rosterDoc(id) {
+      return get(/databases/$(database)/documents/roster/$(id));
     }
 
-    function isMentorRecord(personId) {
-      return exists(/databases/$(database)/documents/roster/$(personId)) &&
-        rosterDoc(personId).data.role == 'mentor';
+    function myRoster() {
+      return get(/databases/$(database)/documents/roster/$(personId())).data;
     }
 
-    function isStudentAssignedToMentor(studentId, mentorId) {
-      return exists(/databases/$(database)/documents/roster/$(studentId)) &&
-        rosterDoc(studentId).data.role == 'student' &&
-        rosterDoc(studentId).data.mentorId == mentorId;
+    function isStudent() {
+      return isKsuLocal() && myRoster().role == 'student';
     }
 
-    // Strict Messaging Permission Matrix on /chats/{channelId}:
-    // Allowed pairs ONLY:
-    //   1. Admin <-> Mentor  (participants: ['admin', mentorId])
-    //   2. Mentor <-> Assigned Student (participants: [mentorId, studentId] where student.mentorId == mentorId)
-    // Strictly Blocked:
-    //   - Student <-> Admin (['admin', studentId])
-    //   - Student <-> Student
-    //   - Mentor <-> Unassigned/Other Student
-    //   - Mentor <-> Mentor
-    function isValidAuthorizedChatPair(participants) {
-      return participants is list &&
-        participants.size() == 2 &&
-        (
-          (participants[0] == 'admin' && isMentorRecord(participants[1])) ||
-          (participants[1] == 'admin' && isMentorRecord(participants[0])) ||
-          (isMentorRecord(participants[0]) && isStudentAssignedToMentor(participants[1], participants[0])) ||
-          (isMentorRecord(participants[1]) && isStudentAssignedToMentor(participants[0], participants[1]))
+    function isMentor() {
+      return isKsuLocal() && myRoster().role == 'mentor';
+    }
+
+    function otherParticipant(participants, me) {
+      return participants[0] == me ? participants[1] : participants[0];
+    }
+
+    function isValidStudentChat(participants) {
+      return isStudent()
+        && participants is list
+        && participants.size() == 2
+        && personId() in participants
+        && myRoster().mentorId is string
+        && myRoster().mentorId != ''
+        && myRoster().mentorId in participants
+        && !('admin' in participants);
+    }
+
+    function isAssignedStudentData(stuData, mId) {
+      return stuData.role == 'student' && stuData.mentorId == mId;
+    }
+
+    function isValidMentorChat(participants) {
+      return isMentor()
+        && participants is list
+        && participants.size() == 2
+        && personId() in participants
+        && (
+          'admin' in participants ||
+          isAssignedStudentData(rosterDoc(otherParticipant(participants, personId())).data, personId())
         );
     }
 
-    match /chats/{channelId} {
-      allow read: if (
-        resource == null ||
-        isValidAuthorizedChatPair(resource.data.participants)
-      ) && (
-        // Admins cannot read Student <-> Mentor private chats unless Admin is one of the participants (Admin <-> Mentor)
-        !isAdmin() || (resource != null && 'admin' in resource.data.participants)
-      );
+    function isValidAdminChat(participants) {
+      return isAdmin()
+        && participants is list
+        && participants.size() == 2
+        && 'admin' in participants
+        && rosterDoc(otherParticipant(participants, 'admin')).data.role == 'mentor';
+    }
 
-      allow create, update: if isValidAuthorizedChatPair(request.resource.data.participants) && (
-        !isAdmin() || ('admin' in request.resource.data.participants)
-      );
+    function isSenderValidForKsuUser(data) {
+      return (!('lastSenderId' in data) || data.lastSenderId == personId())
+        && (!('senderId' in data) || data.senderId == personId());
+    }
+
+    function isSenderValidForAdmin(data) {
+      return (!('lastSenderId' in data) || data.lastSenderId == 'admin' || data.lastSenderId == request.auth.uid)
+        && (!('senderId' in data) || data.senderId == 'admin' || data.senderId == request.auth.uid);
+    }
+
+    // 1. admins/{uid}: Signed-in user can read ONLY their own doc; no client writes
+    match /admins/{uid} {
+      allow get: if isSignedIn() && request.auth.uid == uid;
+      allow list: if isAdmin();
+      allow write: if false;
+    }
+
+    // 2. roster/{docPersonId}:
+    // - Admin: full read/write
+    // - Student/Mentor: get own doc; student can get assigned mentor's doc; mentor can get assigned students' docs; no list for non-admins
+    match /roster/{docPersonId} {
+      allow get: if isAdmin()
+        || (isKsuLocal() && personId() == docPersonId && resource != null)
+        || (isStudent() && myRoster().mentorId == docPersonId && resource.data.role == 'mentor')
+        || (isMentor() && resource.data.role == 'student' && resource.data.mentorId == personId());
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // 3. checklists/{docPersonId}:
+    // - Student: read/update own checklist (cannot change mentorId, role, createdAt); create own checklist only if mentorId matches roster
+    // - Mentor: read checklists where resource.data.mentorId == personId(); update only status/review fields (taskDocs, tasks, updatedAt)
+    // - Admin: full read/write
+    match /checklists/{docPersonId} {
+      allow get, list: if isAdmin()
+        || (isStudent() && personId() == docPersonId)
+        || (isMentor() && resource.data.mentorId == personId());
+
+      allow create: if isAdmin()
+        || (
+          isStudent()
+          && personId() == docPersonId
+          && request.resource.data.mentorId == myRoster().mentorId
+        );
+
+      allow update: if isAdmin()
+        || (
+          isStudent()
+          && personId() == docPersonId
+          && request.resource.data.mentorId == resource.data.mentorId
+          && (!('role' in resource.data) || request.resource.data.role == resource.data.role)
+          && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+        )
+        || (
+          isMentor()
+          && resource.data.mentorId == personId()
+          && request.resource.data.mentorId == resource.data.mentorId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['taskDocs', 'tasks', 'updatedAt'])
+        );
 
       allow delete: if isAdmin();
     }
 
-    // System A: High-Priority Urgent Institutional Warnings & Portal Settings
-    // Only Admin can dispatch urgent warnings; Students & Mentors can read and record acknowledgments
-    match /settings/{docId} {
-      allow read: if true;
-      allow write: if isAdmin() || docId == 'portalConfig';
-    }
-
-    match /roster/{personId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    match /mentors/{mentorId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    match /checklists/{studentId} {
-      allow read, write: if true;
-    }
-
+    // 4. monthlyReports/{reportId}:
+    // - Mentor: create/read/update own reports (mentorId == personId())
+    // - Admin: full read/write
+    // - Student: no access
     match /monthlyReports/{reportId} {
-      allow read, write: if true;
+      allow get, list: if isAdmin()
+        || (isMentor() && resource.data.mentorId == personId());
+
+      allow create: if isAdmin()
+        || (isMentor() && request.resource.data.mentorId == personId());
+
+      allow update: if isAdmin()
+        || (
+          isMentor()
+          && resource.data.mentorId == personId()
+          && request.resource.data.mentorId == personId()
+        );
+
+      allow delete: if isAdmin();
     }
 
-    match /reportFiles/{fileId} {
-      allow read, write: if true;
+    // 5. chats/{channelId} and optional messages subcollection:
+    // - Valid pairs ONLY: student <-> assigned mentor, mentor <-> admin
+    // - Student <-> admin and student <-> student are forbidden
+    match /chats/{channelId} {
+      function effectiveParticipants() {
+        return resource == null ? channelId.split('__') : resource.data.participants;
+      }
+
+      allow get: if isValidStudentChat(effectiveParticipants())
+        || isValidMentorChat(effectiveParticipants())
+        || isValidAdminChat(effectiveParticipants());
+
+      allow list: if isValidStudentChat(resource.data.participants)
+        || (isMentor() && resource.data.participants is list && personId() in resource.data.participants)
+        || (isAdmin() && resource.data.participants is list && 'admin' in resource.data.participants);
+
+      allow create: if (
+          (isValidStudentChat(request.resource.data.participants) || isValidMentorChat(request.resource.data.participants))
+          && isSenderValidForKsuUser(request.resource.data)
+        ) || (
+          isValidAdminChat(request.resource.data.participants)
+          && isSenderValidForAdmin(request.resource.data)
+        );
+
+      allow update: if (
+          (isValidStudentChat(request.resource.data.participants) || isValidMentorChat(request.resource.data.participants))
+          && request.resource.data.participants == resource.data.participants
+          && (!('messages' in resource.data) || (request.resource.data.messages is list && request.resource.data.messages.size() >= resource.data.messages.size()))
+          && isSenderValidForKsuUser(request.resource.data)
+        ) || (
+          isValidAdminChat(request.resource.data.participants)
+          && request.resource.data.participants == resource.data.participants
+          && isSenderValidForAdmin(request.resource.data)
+        );
+
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow get, list: if isValidStudentChat(channelId.split('__'))
+          || isValidMentorChat(channelId.split('__'))
+          || isValidAdminChat(channelId.split('__'));
+
+        allow create: if (
+            (isValidStudentChat(channelId.split('__')) || isValidMentorChat(channelId.split('__')))
+            && request.resource.data.senderId == personId()
+          ) || (
+            isValidAdminChat(channelId.split('__'))
+            && (request.resource.data.senderId == request.auth.uid || request.resource.data.senderId == 'admin')
+          );
+
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
     }
 
-    match /announcements/{noticeId} {
-      allow read: if true;
+    // 6. urgentWarnings/{warningId}:
+    // - Admin: create, read, update, delete
+    // - Student/Mentor: read where recipientId == personId(); update ONLY acknowledged & acknowledgedAt
+    match /urgentWarnings/{warningId} {
+      allow get, list: if isAdmin()
+        || (isKsuLocal() && (isStudent() || isMentor()) && resource.data.recipientId == personId());
+
+      allow create, delete: if isAdmin();
+
+      allow update: if isAdmin()
+        || (
+          isKsuLocal()
+          && (isStudent() || isMentor())
+          && resource.data.recipientId == personId()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged', 'acknowledgedAt'])
+        );
+    }
+
+    // 7. userSettings/{docPersonId}:
+    // - User can read and write ONLY their own doc
+    match /userSettings/{docPersonId} {
+      allow read, write: if isKsuLocal()
+        && personId() == docPersonId
+        && (isStudent() || isMentor());
+    }
+
+    // 8. settings/{docId} (portalConfig):
+    // - Readable by any signed-in portal user; writable only by admin
+    match /settings/{docId} {
+      allow get: if isAdmin() || (isKsuLocal() && (isStudent() || isMentor()));
+      allow list, write: if isAdmin();
+    }
+
+    // 9. announcements/{annId}:
+    // - Readable by any signed-in portal user; writable only by admin
+    match /announcements/{annId} {
+      allow get, list: if isAdmin() || (isKsuLocal() && (isStudent() || isMentor()));
       allow write: if isAdmin();
     }
 
-    match /admins/{adminUid} {
-      allow read, write: if isSignedIn() && request.auth.uid == adminUid;
+    // Default deny everything else
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -23,6 +23,7 @@ import {
   deleteDoc,
   collection,
   query,
+  where,
   orderBy,
   onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
@@ -47,6 +48,7 @@ let currentUserName = "";
 let currentStudentMentorId = null;
 let isLoginInProgress = false;
 let passwordBannerDismissedThisSession = false;
+const scopedRosterCache = new Map();
 
 // Admin cached state (Always starts empty / 0)
 let adminRosterStudents = [];
@@ -322,6 +324,9 @@ function isMessengerPairAuthorized(initiatorRole, initiatorId, recipientId, rost
         rosterByKey.set(String(id).toLowerCase(), { ...data, _id: id });
       }
     });
+    scopedRosterCache.forEach((p, k) => {
+      if (k && p) rosterByKey.set(String(k).toLowerCase(), p);
+    });
   }
 
   if (role === "student") {
@@ -403,10 +408,16 @@ async function dbGetDoc(colName, docId) {
       }
       localMap[key] = merged;
       setLocalCollection(colName, localMap);
+      if (colName === "roster") {
+        scopedRosterCache.set(key.toLowerCase(), { ...merged, _id: key.toLowerCase() });
+      }
       return merged;
     }
   } catch (err) {
     // Firestore permission-denied or offline: seamlessly use localData
+  }
+  if (colName === "roster" && localData) {
+    scopedRosterCache.set(key.toLowerCase(), { ...localData, _id: key.toLowerCase() });
   }
   return localData;
 }
@@ -432,6 +443,9 @@ async function dbGetAll(colName) {
           }));
         }
         localMap[id] = merged;
+        if (colName === "roster") {
+          scopedRosterCache.set(String(id).toLowerCase(), merged);
+        }
       }
     });
     setLocalCollection(colName, localMap);
@@ -451,6 +465,128 @@ async function dbGetAll(colName) {
     await hydrateReportsWithVaultFiles(results);
   }
   return results;
+}
+
+async function dbQuery(colName, ...constraints) {
+  const localMap = getLocalCollection(colName);
+  const deletedMap = getLocalCollection(colName + "_deleted");
+  const cloudResults = [];
+  let cloudSucceeded = false;
+
+  try {
+    const q =
+      constraints.length > 0
+        ? query(collection(db, colName), ...constraints)
+        : collection(db, colName);
+    const snap = await getDocs(q);
+    cloudSucceeded = true;
+    snap.forEach((docSnap) => {
+      const id = docSnap.id;
+      if (!deletedMap[id]) {
+        const existingLocal = localMap[id] || {};
+        const cloudData = docSnap.data() || {};
+        const merged = { ...existingLocal, ...cloudData, _id: id };
+        if (Array.isArray(existingLocal.files) && Array.isArray(cloudData.files)) {
+          merged.files = cloudData.files.map((cf, i) => ({
+            ...(existingLocal.files[i] || {}),
+            ...cf,
+            dataUrl: cf.dataUrl || existingLocal.files[i]?.dataUrl
+          }));
+        }
+        localMap[id] = merged;
+        cloudResults.push(merged);
+      }
+    });
+    setLocalCollection(colName, localMap);
+  } catch (err) {
+    // Fallback to localMap when offline
+  }
+
+  let results = cloudSucceeded
+    ? cloudResults
+    : Object.entries(localMap)
+        .filter(([id]) => !deletedMap[id])
+        .map(([id, data]) => ({ ...data, _id: id }));
+
+  if (colName === "chats") {
+    results = results.filter((docItem) => isChatChannelAuthorizedForCurrentSession(docItem._id));
+  }
+
+  if (colName === "monthlyReports") {
+    await hydrateReportsWithVaultFiles(results);
+  }
+  return results;
+}
+
+async function loadScopedRosterDocsForCurrentUser() {
+  if (!currentRole) return [];
+  if (currentRole === "admin") {
+    return await dbGetAll("roster");
+  }
+
+  const myId = String(currentUserId || "").trim().toLowerCase();
+  if (!myId) return [];
+
+  if (currentRole === "student") {
+    const meDoc = await dbGetDoc("roster", myId);
+    const docs = [];
+    if (meDoc) {
+      const meWithId = { ...meDoc, _id: myId };
+      scopedRosterCache.set(myId, meWithId);
+      docs.push(meWithId);
+      const mentorId = cleanMentorRefValue(meDoc.mentorId).toLowerCase();
+      if (mentorId) {
+        const mentorDoc = await dbGetDoc("roster", mentorId);
+        if (mentorDoc) {
+          const mentorWithId = { ...mentorDoc, _id: mentorId };
+          scopedRosterCache.set(mentorId, mentorWithId);
+          docs.push(mentorWithId);
+        }
+      }
+    }
+    return docs;
+  }
+
+  if (currentRole === "mentor") {
+    const [meDoc, assignedChecklists] = await Promise.all([
+      dbGetDoc("roster", myId),
+      dbQuery("checklists", where("mentorId", "==", myId))
+    ]);
+    const docs = [];
+    if (meDoc) {
+      const meWithId = { ...meDoc, _id: myId };
+      scopedRosterCache.set(myId, meWithId);
+      docs.push(meWithId);
+    }
+    const studentIds = Array.from(
+      new Set(
+        assignedChecklists
+          .map((c) => String(c?._id || "").trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+    const studentDocs = await Promise.all(
+      studentIds.map(async (stuId) => {
+        const sDoc = await dbGetDoc("roster", stuId);
+        if (!sDoc) return null;
+        const sWithId = { ...sDoc, _id: stuId };
+        scopedRosterCache.set(stuId, sWithId);
+        return sWithId;
+      })
+    );
+    studentDocs.forEach((d) => {
+      if (d) docs.push(d);
+    });
+    return docs;
+  }
+
+  return [];
+}
+
+async function loadScopedChatsForCurrentUser() {
+  const myKey = getMyChatKey();
+  if (!myKey || !currentRole) return [];
+  return await dbQuery("chats", where("participants", "array-contains", myKey));
 }
 
 async function dbSetDoc(colName, docId, data, merge = true) {
@@ -687,7 +823,9 @@ async function loadPortalConfig() {
     ...initialConfig.activeSemesterMonths,
     ...adminActiveMonthsBySemester
   };
-  await dbSetDoc("settings", "portalConfig", initialConfig);
+  if (currentRole === "admin") {
+    await dbSetDoc("settings", "portalConfig", initialConfig);
+  }
   portalConfigCache = initialConfig;
   return portalConfigCache;
 }
@@ -1624,6 +1762,7 @@ function clearAllCachedUserData() {
   currentUserName = "";
   currentStudentMentorId = null;
   passwordBannerDismissedThisSession = false;
+  scopedRosterCache.clear();
   adminRosterStudents = [];
   adminRosterMentors = [];
   adminChecklistsMap = {};
@@ -1747,8 +1886,13 @@ async function loadStudentDashboard(studentId, studentName) {
   ]);
 
   const safeRoster = rosterData || {};
+  const studentMentorId = normalizeMentorIdValue(
+    checklistDoc?.mentorId !== undefined ? checklistDoc.mentorId : safeRoster.mentorId
+  );
   const checklistData = checklistDoc || {
     name: studentName,
+    role: "student",
+    mentorId: studentMentorId,
     tasks: {},
     taskDocs: {}
   };
@@ -1774,12 +1918,16 @@ async function loadStudentDashboard(studentId, studentName) {
       cb.onchange = async () => {
         tasks[taskId] = cb.checked;
         row.classList.toggle("completed", cb.checked);
-        await dbSetDoc("checklists", studentId, {
+        const payload = {
           name: studentName,
+          mentorId: studentMentorId,
           tasks,
           taskDocs,
           updatedAt: new Date().toISOString()
-        });
+        };
+        if (checklistDoc?.role !== undefined) payload.role = checklistDoc.role;
+        if (checklistDoc?.createdAt !== undefined) payload.createdAt = checklistDoc.createdAt;
+        await dbSetDoc("checklists", studentId, payload);
         updateStudentProgressUI(tasks);
         renderStudentArcDeadlineAndBanner(tasks, taskDocs, portalConfigCache || portalConfig);
         filterStudentTasks();
@@ -1992,13 +2140,20 @@ document.getElementById("task-doc-input")?.addEventListener("change", async (e) 
     const taskId = pendingUploadTaskId;
     pendingUploadTaskId = null;
 
-    const existing = (await dbGetDoc("checklists", currentUserId)) || {
+    const [rosterDoc, existingDoc] = await Promise.all([
+      dbGetDoc("roster", currentUserId),
+      dbGetDoc("checklists", currentUserId)
+    ]);
+    const existing = existingDoc || {
       name: currentUserName,
       tasks: {},
       taskDocs: {}
     };
     const tasks = existing.tasks || {};
     const taskDocs = existing.taskDocs || {};
+    const mentorIdVal = normalizeMentorIdValue(
+      existingDoc?.mentorId !== undefined ? existingDoc.mentorId : rosterDoc?.mentorId
+    );
 
     taskDocs[taskId] = {
       fileName: file.name,
@@ -2011,12 +2166,16 @@ document.getElementById("task-doc-input")?.addEventListener("change", async (e) 
     };
     tasks[taskId] = true;
 
-    await dbSetDoc("checklists", currentUserId, {
+    const payload = {
       name: currentUserName,
+      mentorId: mentorIdVal,
       tasks,
       taskDocs,
       updatedAt: new Date().toISOString()
-    });
+    };
+    if (existingDoc?.role !== undefined) payload.role = existingDoc.role;
+    if (existingDoc?.createdAt !== undefined) payload.createdAt = existingDoc.createdAt;
+    await dbSetDoc("checklists", currentUserId, payload);
 
     showToast(
       t("uploadSuccess"),
@@ -2067,20 +2226,41 @@ async function loadMentorDashboard(mentorId, mentorName) {
   const stuArcBanner = document.getElementById("student-arc-urgent-banner");
   if (stuArcBanner) stuArcBanner.style.display = "none";
 
-  const [allRoster, allChecklists, allReports] = await Promise.all([
-    dbGetAll("roster"),
-    dbGetAll("checklists"),
-    dbGetAll("monthlyReports"),
+  const mentorIdLower = String(mentorId || "").trim().toLowerCase();
+  const [assignedChecklists, myReportsRaw] = await Promise.all([
+    dbQuery("checklists", where("mentorId", "==", mentorIdLower)),
+    dbQuery("monthlyReports", where("mentorId", "==", mentorIdLower)),
     loadPortalConfig()
   ]);
 
   const checklistMap = {};
-  allChecklists.forEach((c) => {
-    checklistMap[c._id] = c;
+  assignedChecklists.forEach((c) => {
+    if (c && c._id && String(c.mentorId || "").toLowerCase() === mentorIdLower) {
+      checklistMap[String(c._id).toLowerCase()] = c;
+    }
   });
 
-  const assignedStudents = allRoster.filter(
-    (r) => r.role === "student" && String(r.mentorId || "").toLowerCase() === String(mentorId).toLowerCase()
+  const assignedStudentIds = Object.keys(checklistMap);
+  const studentRosterDocs = await Promise.all(
+    assignedStudentIds.map(async (sId) => {
+      const rDoc = await dbGetDoc("roster", sId);
+      if (!rDoc) {
+        return {
+          _id: sId,
+          role: "student",
+          name: checklistMap[sId]?.name || sId,
+          mentorId: mentorIdLower
+        };
+      }
+      return { ...rDoc, _id: sId };
+    })
+  );
+
+  const assignedStudents = studentRosterDocs.filter(
+    (r) =>
+      r &&
+      r.role === "student" &&
+      String(r.mentorId || "").toLowerCase() === mentorIdLower
   );
 
   // Compute KPIs (All 0 if no students assigned; no ARC urgency count on Mentor view)
@@ -2110,8 +2290,8 @@ async function loadMentorDashboard(mentorId, mentorName) {
   });
 
   // Load Mentor's Own Submitted Reports & 1:1 Session Cycle Progress
-  const myReports = allReports
-    .filter((r) => String(r.mentorId || "").toLowerCase() === String(mentorId).toLowerCase())
+  const myReports = myReportsRaw
+    .filter((r) => String(r.mentorId || "").toLowerCase() === mentorIdLower)
     .sort((a, b) => String(b.submittedAt || "").localeCompare(String(a.submittedAt || "")));
 
   const totalSessionsSubmitted = myReports.reduce((sum, rep) => sum + getReportSessionCount(rep), 0);
@@ -2524,9 +2704,10 @@ async function refreshMentorReportModalState() {
   if (!currentUserId || !infoBanner) return;
 
   const selectedMonth = monthInput?.value || "2026-10";
-  const allReports = await dbGetAll("monthlyReports");
+  const myIdLower = String(currentUserId).trim().toLowerCase();
+  const allReports = await dbQuery("monthlyReports", where("mentorId", "==", myIdLower));
   const myReports = allReports.filter(
-    (r) => String(r.mentorId || "").toLowerCase() === String(currentUserId).toLowerCase()
+    (r) => String(r.mentorId || "").toLowerCase() === myIdLower
   );
 
   const monthAgg = getMentorMonthAggregatedData(currentUserId, selectedMonth, myReports);
@@ -2680,9 +2861,10 @@ async function openMentorReportModal() {
 
   // Auto-advance month picker to the next unsubmitted cycle month so previous months are never accidentally targeted
   if (currentUserId && monthInput) {
-    const allReports = await dbGetAll("monthlyReports");
+    const myIdLower = String(currentUserId).trim().toLowerCase();
+    const allReports = await dbQuery("monthlyReports", where("mentorId", "==", myIdLower));
     const myReports = allReports.filter(
-      (r) => String(r.mentorId || "").toLowerCase() === String(currentUserId).toLowerCase()
+      (r) => String(r.mentorId || "").toLowerCase() === myIdLower
     );
     const nextOpenMonth = DEFAULT_CYCLE_MONTHS.find(
       (mk) => getMentorMonthAggregatedData(currentUserId, mk, myReports).filesCount === 0
@@ -2750,9 +2932,10 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
   }
 
   // Validate against per-semester 6-session / 3-month cycle rules & strictly append without overwriting
-  const allReports = await dbGetAll("monthlyReports");
+  const myIdLower = String(currentUserId || "").trim().toLowerCase();
+  const allReports = await dbQuery("monthlyReports", where("mentorId", "==", myIdLower));
   const myReports = allReports.filter(
-    (r) => String(r.mentorId || "").toLowerCase() === String(currentUserId).toLowerCase()
+    (r) => String(r.mentorId || "").toLowerCase() === myIdLower
   );
   const mySemesterReports = myReports.filter((r) => isSameSemesterBlock(r.month, month));
 
@@ -2823,12 +3006,12 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
       const f = collectedFiles[idx];
       const dataUrl = await fileToDataUrl(f);
       const monthSessionIdx = idx + 1;
-      const fileId = `pdf_${currentUserId}_${month}_s${monthSessionIdx}_${nowTs}_${idx}_${randSuffix}`;
+      const fileId = `pdf_${myIdLower}_${month}_s${monthSessionIdx}_${nowTs}_${idx}_${randSuffix}`;
 
       // Permanently store full PDF binary in IndexedDB Vault (+ Firestore reportFiles if <700KB)
       await savePdfToVault(fileId, {
         fileId,
-        mentorId: currentUserId,
+        mentorId: myIdLower,
         month,
         name: f.name,
         type: f.type || "application/pdf",
@@ -2849,13 +3032,13 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
 
     // Strict 2-PDF monthly submission & strictly append-only unique document ID (never overwrites previous months)
     const sessions = encodedFiles.length; // Always 2
-    const reportId = `rep_${currentUserId}_${month}_${nowTs}_${randSuffix}`;
+    const reportId = `rep_${myIdLower}_${month}_${nowTs}_${randSuffix}`;
 
     await dbSetDoc(
       "monthlyReports",
       reportId,
       {
-        mentorId: currentUserId,
+        mentorId: myIdLower,
         mentorName: currentUserName,
         month,
         sessions,
@@ -3280,18 +3463,36 @@ document.getElementById("btn-broadcast-arc-warning")?.addEventListener("click", 
     const dlInfo = computeArcDeadlineInfo(portalConfigCache?.arcDeadline, portalConfigCache?.arcCustomMessage);
 
     // System A: High-Priority Urgent Institutional Warning (triggers blocking modal + Web Push on pending Students)
-    await savePortalConfig({
-      arcWarning: {
-        id: `arc_warn_${Date.now()}`,
-        active: true,
-        lastSentAt: nowIso,
-        targetStudentIds: pendingStudents.map((s) => s._id),
-        lastRecipientCount: pendingCount,
-        customMessage: dlInfo.personalizedMessage,
-        deadlineFormatted: dlInfo.formattedDue,
-        acknowledgedBy: []
-      }
-    });
+    const batchId = `arc_warn_${Date.now()}`;
+    await Promise.all([
+      savePortalConfig({
+        arcWarning: {
+          id: batchId,
+          active: true,
+          lastSentAt: nowIso,
+          targetStudentIds: pendingStudents.map((s) => String(s._id).toLowerCase()),
+          lastRecipientCount: pendingCount,
+          customMessage: dlInfo.personalizedMessage,
+          deadlineFormatted: dlInfo.formattedDue,
+          acknowledgedBy: []
+        }
+      }),
+      ...pendingStudents.map((s) => {
+        const stuIdLower = String(s._id).toLowerCase();
+        const warnDocId = `${batchId}__${stuIdLower}`;
+        return dbSetDoc("urgentWarnings", warnDocId, {
+          recipientId: stuIdLower,
+          role: "student",
+          kind: "student_arc",
+          batchId,
+          message: dlInfo.personalizedMessage,
+          deadlineFormatted: dlInfo.formattedDue,
+          sentAt: nowIso,
+          acknowledged: false,
+          acknowledgedAt: null
+        });
+      })
+    ]);
 
     const feedbackText = `Urgent reminder successfully sent to ${pendingCount} pending ${pendingCount === 1 ? "student" : "students"}.`;
 
@@ -5308,21 +5509,40 @@ async function dispatchWarningToUnsubmittedMentors(monthKey) {
     const monthLabel = getMonthGroupDisplayName(monthKey);
 
     // System A: High-Priority Urgent Institutional Warning (strictly separated from System B casual Messenger)
+    const batchId = `mentor_warn_${monthKey}_${Date.now()}`;
     const nextMentorWarnings = {
       ...(portalConfigCache?.mentorReportWarnings || {}),
       [monthKey]: {
-        id: `mentor_warn_${monthKey}_${Date.now()}`,
+        id: batchId,
         active: true,
         monthKey,
         monthLabel,
         message: warningMessage,
-        targetMentorIds: pendingMentors.map((m) => m.id),
+        targetMentorIds: pendingMentors.map((m) => String(m.id).toLowerCase()),
         recipientCount: pendingMentors.length,
         sentAt: nowIso,
         acknowledgedBy: []
       }
     };
-    await savePortalConfig({ mentorReportWarnings: nextMentorWarnings });
+    await Promise.all([
+      savePortalConfig({ mentorReportWarnings: nextMentorWarnings }),
+      ...pendingMentors.map((m) => {
+        const mentorIdLower = String(m.id).toLowerCase();
+        const warnDocId = `${batchId}__${mentorIdLower}`;
+        return dbSetDoc("urgentWarnings", warnDocId, {
+          recipientId: mentorIdLower,
+          role: "mentor",
+          kind: "mentor_report",
+          monthKey,
+          monthLabel,
+          batchId,
+          message: warningMessage,
+          sentAt: nowIso,
+          acknowledged: false,
+          acknowledgedAt: null
+        });
+      })
+    ]);
 
     const count = pendingMentors.length;
     const feedbackText = `Urgent warning sent successfully to ${count} pending ${count === 1 ? "mentor" : "mentors"}.`;
@@ -6257,6 +6477,13 @@ async function collectActiveUrgentAlertsForCurrentUser() {
   const cfg = portalConfigCache || (await loadPortalConfig());
   const myIdLower = String(currentUserId || "").toLowerCase();
   const ackSet = getLocalAcknowledgedUrgentIds();
+  const myWarningDocs = await dbQuery("urgentWarnings", where("recipientId", "==", myIdLower));
+  const warningDocByBatch = new Map();
+  myWarningDocs.forEach((wDoc) => {
+    if (wDoc && wDoc._id) {
+      warningDocByBatch.set(wDoc.batchId || wDoc._id, wDoc);
+    }
+  });
   const alerts = [];
 
   if (currentRole === "student") {
@@ -6278,12 +6505,18 @@ async function collectActiveUrgentAlertsForCurrentUser() {
         if (!hasSubmittedArc) {
           const dlInfo = computeArcDeadlineInfo(cfg?.arcDeadline, cfg?.arcCustomMessage);
           const alertId = arcWarn.id || `arc_warn_${arcWarn.lastSentAt || "active"}`;
-          const configAck = Array.isArray(arcWarn.acknowledgedBy)
-            ? arcWarn.acknowledgedBy.some((u) => String(u).toLowerCase() === myIdLower)
-            : false;
+          const matchedWarnDoc =
+            warningDocByBatch.get(alertId) ||
+            myWarningDocs.find((d) => d._id === `${alertId}__${myIdLower}`);
+          const configAck =
+            Boolean(matchedWarnDoc?.acknowledged) ||
+            (Array.isArray(arcWarn.acknowledgedBy)
+              ? arcWarn.acknowledgedBy.some((u) => String(u).toLowerCase() === myIdLower)
+              : false);
 
           alerts.push({
             id: alertId,
+            warningDocId: matchedWarnDoc?._id || `${alertId}__${myIdLower}`,
             kind: "student_arc",
             title: "Urgent ARC Application & Deadline Notice",
             sender: "International Office (Admin)",
@@ -6299,7 +6532,7 @@ async function collectActiveUrgentAlertsForCurrentUser() {
     }
   } else if (currentRole === "mentor") {
     const warningsMap = cfg?.mentorReportWarnings || {};
-    const allReports = await dbGetAll("monthlyReports");
+    const allReports = await dbQuery("monthlyReports", where("mentorId", "==", myIdLower));
     const myReports = allReports.filter(
       (r) => String(r.mentorId || "").toLowerCase() === myIdLower
     );
@@ -6314,13 +6547,19 @@ async function collectActiveUrgentAlertsForCurrentUser() {
 
       const monthLabel = wObj.monthLabel || getMonthGroupDisplayName(mKey);
       const alertId = wObj.id || `mentor_warn_${mKey}_${wObj.sentAt || "active"}`;
-      const configAck = Array.isArray(wObj.acknowledgedBy)
-        ? wObj.acknowledgedBy.some((u) => String(u).toLowerCase() === myIdLower)
-        : false;
+      const matchedWarnDoc =
+        warningDocByBatch.get(alertId) ||
+        myWarningDocs.find((d) => d._id === `${alertId}__${myIdLower}`);
+      const configAck =
+        Boolean(matchedWarnDoc?.acknowledged) ||
+        (Array.isArray(wObj.acknowledgedBy)
+          ? wObj.acknowledgedBy.some((u) => String(u).toLowerCase() === myIdLower)
+          : false);
       const msg = wObj.message || DEFAULT_MENTOR_REPORT_WARNING_MESSAGE;
 
       alerts.push({
         id: alertId,
+        warningDocId: matchedWarnDoc?._id || `${alertId}__${myIdLower}`,
         kind: "mentor_report",
         monthKey: mKey,
         title: `Critical Monthly Report Unsubmitted (${monthLabel})`,
@@ -6344,33 +6583,24 @@ async function acknowledgeUrgentAlertItem(alertItem) {
   saveLocalAcknowledgedUrgentId(alertItem.id);
 
   const myIdLower = String(currentUserId || "").toLowerCase();
-  const cfg = portalConfigCache || (await loadPortalConfig());
+  const warnDocId = alertItem.warningDocId || `${alertItem.id}__${myIdLower}`;
+  const nowIso = new Date().toISOString();
 
-  if (alertItem.kind === "student_arc" && cfg?.arcWarning) {
-    const prevAck = Array.isArray(cfg.arcWarning.acknowledgedBy) ? cfg.arcWarning.acknowledgedBy : [];
-    if (!prevAck.some((u) => String(u).toLowerCase() === myIdLower)) {
-      await savePortalConfig({
-        arcWarning: {
-          ...cfg.arcWarning,
-          acknowledgedBy: [...prevAck, currentUserId]
-        }
-      });
+  // Student/Mentor updates ONLY their own urgentWarnings doc (acknowledged & acknowledgedAt)
+  try {
+    const existingWarn = await dbGetDoc("urgentWarnings", warnDocId);
+    if (existingWarn) {
+      await dbSetDoc(
+        "urgentWarnings",
+        warnDocId,
+        {
+          acknowledged: true,
+          acknowledgedAt: nowIso
+        },
+        true
+      );
     }
-  } else if (alertItem.kind === "mentor_report" && alertItem.monthKey && cfg?.mentorReportWarnings?.[alertItem.monthKey]) {
-    const wObj = cfg.mentorReportWarnings[alertItem.monthKey];
-    const prevAck = Array.isArray(wObj.acknowledgedBy) ? wObj.acknowledgedBy : [];
-    if (!prevAck.some((u) => String(u).toLowerCase() === myIdLower)) {
-      await savePortalConfig({
-        mentorReportWarnings: {
-          ...cfg.mentorReportWarnings,
-          [alertItem.monthKey]: {
-            ...wObj,
-            acknowledgedBy: [...prevAck, currentUserId]
-          }
-        }
-      });
-    }
-  }
+  } catch (_) {}
 }
 
 function renderUrgentBlockingModalFromQueue() {
@@ -6650,9 +6880,9 @@ async function buildMessengerThreadsForCurrentUser() {
   const myKey = getMyChatKey();
   if (!myKey || !currentRole) return [];
 
-  // Load roster first so local roster mirror is up-to-date before chats authorization filter runs
-  const allRoster = await dbGetAll("roster");
-  const allChats = await dbGetAll("chats");
+  // Load role-scoped roster and participant-scoped chats so non-admins never run unfiltered collection reads
+  const allRoster = await loadScopedRosterDocsForCurrentUser();
+  const allChats = await loadScopedChatsForCurrentUser();
 
   const rosterById = new Map();
   allRoster.forEach((person) => {
@@ -6923,7 +7153,7 @@ document.getElementById("messenger-search-input")?.addEventListener("input", () 
 async function selectMessengerConversation(recipientId, recipientName, roleLabel = "Direct Message", openMobilePane = true) {
   if (!recipientId) return false;
 
-  const allRoster = await dbGetAll("roster");
+  const allRoster = await loadScopedRosterDocsForCurrentUser();
   if (!isMessengerPairAuthorized(currentRole, currentUserId, recipientId, allRoster)) {
     activeChatRecipientId = null;
     activeChatRecipientName = "";
@@ -7078,7 +7308,7 @@ document.getElementById("chat-modal")?.addEventListener("click", (e) => {
 document.getElementById("messenger-mark-all-read")?.addEventListener("click", async () => {
   const myKey = getMyChatKey();
   if (!myKey) return;
-  const allChats = await dbGetAll("chats");
+  const allChats = await loadScopedChatsForCurrentUser();
   for (const chatDoc of allChats) {
     const channelId = String(chatDoc._id || "").toLowerCase();
     if (channelId.split("__").includes(myKey) && isChatChannelAuthorizedForCurrentSession(channelId)) {
@@ -7161,8 +7391,9 @@ document.getElementById("chat-input-form")?.addEventListener("submit", async (e)
   }
 
   if (inputEl) inputEl.value = "";
-  const senderKey = currentRole === "admin" ? "admin" : currentUserId;
-  const channelId = getChatChannelId(senderKey, activeChatRecipientId);
+  const senderKey = String(currentRole === "admin" ? "admin" : currentUserId || "").toLowerCase();
+  const recipientKey = String(activeChatRecipientId || "").toLowerCase();
+  const channelId = getChatChannelId(senderKey, recipientKey);
   const nowIso = new Date().toISOString();
 
   try {
@@ -7171,15 +7402,16 @@ document.getElementById("chat-input-form")?.addEventListener("submit", async (e)
     messages.push({
       senderId: senderKey,
       senderName: currentRole === "admin" ? "International Office" : currentUserName,
-      recipientId: activeChatRecipientId,
+      recipientId: recipientKey,
       recipientName: activeChatRecipientName,
       text,
-      readBy: [String(senderKey).toLowerCase()],
+      readBy: [senderKey],
       sentAt: nowIso
     });
 
     await dbSetDoc("chats", channelId, {
-      participants: [String(senderKey).toLowerCase(), String(activeChatRecipientId).toLowerCase()],
+      participants: [senderKey, recipientKey].sort(),
+      lastSenderId: senderKey,
       messages,
       updatedAt: nowIso
     });
@@ -7208,7 +7440,7 @@ async function refreshMessengerUnreadBadges(showToastOnNew = false) {
     return;
   }
 
-  const allChats = await dbGetAll("chats");
+  const allChats = await loadScopedChatsForCurrentUser();
   let unreadCount = 0;
   let unreadFromMentor = 0;
   let unreadFromAdmin = 0;
