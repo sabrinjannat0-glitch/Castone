@@ -829,10 +829,11 @@ async function savePortalConfig(partialUpdate, options = {}) {
 }
 
 function formatArcBannerMessage(rawTemplate, daysRemaining, formattedDue) {
+  const trimmed = typeof rawTemplate === "string" ? rawTemplate.trim() : "";
   const tpl =
-    typeof rawTemplate === "string" && rawTemplate.trim()
-      ? rawTemplate.trim()
-      : DEFAULT_ARC_BANNER_TEMPLATE;
+    !trimmed || trimmed === DEFAULT_ARC_BANNER_TEMPLATE
+      ? t("defaultStudentArcUrgentText")
+      : trimmed;
   return tpl
     .replace(/\{days_left\}/gi, String(daysRemaining))
     .replace(/\{deadline\}/gi, String(formattedDue))
@@ -874,27 +875,28 @@ function computeArcDeadlineInfo(deadlineStr, customMessageOverride) {
   };
 }
 
-const MONTH_NAMES_EN = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"
-];
-
-// Strictly standard calendar name (e.g. "March", "April", "September") — no dynamic renaming
+// Strictly standard calendar name (localized via i18n.js)
 function getCalendarMonthName(monthKey) {
   const clean = String(monthKey || "").trim();
   const match = clean.match(/^(\d{4})-(\d{2})$/);
-  if (!match) return clean || "Uncategorized";
-  const monthIdx = Number(match[2]) - 1;
-  return MONTH_NAMES_EN[monthIdx] || clean;
+  if (!match) return clean || t("uncategorized");
+  return t(`month_${match[2]}`) || clean;
+}
+
+function getCalendarMonthShortName(monthKey) {
+  const clean = String(monthKey || "").trim();
+  const match = clean.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return clean || t("uncategorized");
+  return t(`monthShort_${match[2]}`) || clean;
 }
 
 function formatDefaultMonthGroupLabel(monthKey) {
   const clean = String(monthKey || "").trim();
-  if (!clean) return "Uncategorized Reports";
-  return `${getCalendarMonthName(clean)} Reports`;
+  if (!clean) return t("uncategorizedReports");
+  return t("monthGroupReports", { month: getCalendarMonthName(clean) });
 }
 
-// Strictly returns the standard calendar display name (e.g. "March Reports") with zero custom overrides
+// Strictly returns the standard calendar display name with zero custom overrides
 function getMonthGroupDisplayName(monthKey) {
   return formatDefaultMonthGroupLabel(monthKey);
 }
@@ -908,22 +910,24 @@ function getReportSessionCount(rep) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-const SEMESTER_DEFINITIONS = {
-  fall: {
-    key: "fall",
-    label: "Fall Semester",
-    rangeLabel: "September – February",
-    shortRange: "Sep – Feb",
-    icon: "🍂"
-  },
-  spring: {
-    key: "spring",
-    label: "Spring Semester",
-    rangeLabel: "March – August",
-    shortRange: "Mar – Aug",
-    icon: "🌱"
+function getSemesterDefinition(semesterKey = "fall") {
+  if (semesterKey === "spring") {
+    return {
+      key: "spring",
+      label: t("springSemesterLabel"),
+      rangeLabel: t("springSemesterRange"),
+      shortRange: t("springSemesterShortRange"),
+      icon: "🌱"
+    };
   }
-};
+  return {
+    key: "fall",
+    label: t("fallSemesterLabel"),
+    rangeLabel: t("fallSemesterRange"),
+    shortRange: t("fallSemesterShortRange"),
+    icon: "🍂"
+  };
+}
 
 // Returns the dedicated 6 calendar months (YYYY-MM) for a selected semester and academic year:
 // - Fall Semester ("fall"): September through February (YYYY-09 .. YYYY-12, (YYYY+1)-01, (YYYY+1)-02)
@@ -1051,7 +1055,7 @@ function getMentorAllSessionFiles(mentorId, reportsSource = adminReportsList) {
   const perMonthCounter = {};
 
   mentorReportsChron.forEach((rep) => {
-    const mKey = rep.month || "Uncategorized";
+    const mKey = rep.month || t("uncategorized");
     if (!perMonthCounter[mKey]) perMonthCounter[mKey] = 0;
     const files = Array.isArray(rep.files) ? rep.files : [];
     files.forEach((f, idx) => {
@@ -1119,6 +1123,9 @@ function getMentorMonthAggregatedData(mentorId, monthKey, reportsSource = adminR
 // 4. LANGUAGE & NAVIGATION SYSTEM
 // ============================================================
 function applyTranslations() {
+  if (typeof document !== "undefined" && document.documentElement) {
+    document.documentElement.lang = getLang();
+  }
   document.title = t("pageTitle");
 
   document.querySelectorAll("[data-i18n]").forEach((el) => {
@@ -1141,10 +1148,41 @@ function applyTranslations() {
     }
   });
 
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-title");
+    const translated = t(key);
+    if (translated && translated !== key) {
+      el.setAttribute("title", translated);
+    }
+  });
+
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-aria-label");
+    const translated = t(key);
+    if (translated && translated !== key) {
+      el.setAttribute("aria-label", translated);
+    }
+  });
+
   document.querySelectorAll(".task-title[data-task-id]").forEach((el) => {
     const taskId = el.getAttribute("data-task-id");
     el.textContent = getTaskLabel(taskId);
   });
+
+  document.querySelectorAll(".auth-password-toggle").forEach((btn) => {
+    const inputId = btn.getAttribute("data-target");
+    const inputEl = inputId ? document.getElementById(inputId) : null;
+    btn.textContent = inputEl && inputEl.type === "text" ? t("hidePassword") : t("showPassword");
+  });
+
+  const forgotTextEl = document.getElementById("forgot-password-contact-text");
+  if (forgotTextEl) {
+    forgotTextEl.textContent = t("officeContactInfo");
+  }
+
+  if (typeof syncImportRosterCardUI === "function") {
+    syncImportRosterCardUI();
+  }
 
   if (currentRole) {
     renderTopbarForRole(currentRole);
@@ -1169,9 +1207,31 @@ onLangChange(() => {
   if (globalLangSelect) globalLangSelect.value = getLang();
   if (mobileLangSelect) mobileLangSelect.value = getLang();
   applyTranslations();
-  if (currentRole === "admin") renderAdminAll();
-  if (currentRole === "mentor") loadMentorDashboard(currentUserId, currentUserName);
-  if (currentRole === "student") loadStudentDashboard(currentUserId, currentUserName);
+  if (currentRole === "admin") {
+    renderAdminAll();
+    if (lastCsvImportSummary) {
+      renderCsvImportSummaryBanner(lastCsvImportSummary);
+    }
+  }
+  if (currentRole === "mentor") {
+    loadMentorDashboard(currentUserId, currentUserName);
+    const reportModal = document.getElementById("monthly-report-modal");
+    if (reportModal && reportModal.style.display === "flex") {
+      refreshMentorReportModalState();
+    }
+  }
+  if (currentRole === "student") {
+    loadStudentDashboard(currentUserId, currentUserName);
+  }
+  if (currentRole) {
+    renderUrgentAlertsBellDropdown();
+    syncMessengerRoleChromeAndComposer(Boolean(activeChatRecipientId));
+    const chatModal = document.getElementById("chat-modal");
+    if (chatModal && chatModal.style.display === "flex") {
+      renderMessengerThreadsList();
+      renderChatMessages();
+    }
+  }
 });
 
 function openMobileNavDrawer() {
@@ -1223,7 +1283,7 @@ function renderTopbarForRole(role) {
   navAuthControls.style.display = "flex";
   if (floatingFab) floatingFab.style.display = "inline-flex";
 
-  const displayUser = currentUserName || (role === "admin" ? "Admin" : "User");
+  const displayUser = currentUserName || (role === "admin" ? t("defaultAdminLabel") : t("defaultUserLabel"));
   if (mobileUserNameEl) mobileUserNameEl.textContent = displayUser;
   if (mobileAvatarEl) mobileAvatarEl.textContent = getInitials(displayUser);
 
@@ -1284,15 +1344,15 @@ function renderTopbarForRole(role) {
       <button type="button" class="nav-tab-btn" data-scroll-target="admin-people-card">${iconUsers}<span>${escapeHtml(t("navPeople"))}</span></button>
       <button type="button" class="nav-tab-btn" data-scroll-target="admin-arc-card">${iconDoc}<span>${escapeHtml(t("navArcReviews"))}</span></button>
       <button type="button" class="nav-tab-btn" data-scroll-target="admin-reports-box">${iconDoc}<span>${escapeHtml(t("navReports"))}</span></button>
-      <button type="button" class="nav-tab-btn" data-scroll-target="admin-settings-box">${iconGear}<span>Settings</span></button>
+      <button type="button" class="nav-tab-btn" data-scroll-target="admin-settings-box">${iconGear}<span>${escapeHtml(t("navSettings"))}</span></button>
     `;
     mobileItems = [
       { label: t("navOverview"), icon: iconHome, scrollTarget: "stat-grid", active: true },
       { label: t("navPeople"), icon: iconUsers, scrollTarget: "admin-people-card" },
       { label: t("navArcReviews"), icon: iconDoc, scrollTarget: "admin-arc-card" },
       { label: t("navReports"), icon: iconDoc, scrollTarget: "admin-reports-box" },
-      { label: "Settings", icon: iconGear, scrollTarget: "admin-settings-box" },
-      { label: "Messenger", icon: iconMsg, action: () => openMessengerDrawer() }
+      { label: t("navSettings"), icon: iconGear, scrollTarget: "admin-settings-box" },
+      { label: t("navMessenger"), icon: iconMsg, action: () => openMessengerDrawer() }
     ];
   }
 
@@ -1438,19 +1498,19 @@ document.querySelectorAll(".auth-password-toggle").forEach((btn) => {
     if (!inputEl) return;
     if (inputEl.type === "password") {
       inputEl.type = "text";
-      btn.textContent = "Hide";
+      btn.textContent = t("hidePassword");
     } else {
       inputEl.type = "password";
-      btn.textContent = "Show";
+      btn.textContent = t("showPassword");
     }
   });
 });
 
-// Help / Forgot Password Links (Never reveals password formula; shows OFFICE_CONTACT_INFO)
+// Help / Forgot Password Links (Never reveals password formula; shows translated office contact info)
 function openForgotPasswordModal() {
   const modal = document.getElementById("forgot-password-modal");
   const textEl = document.getElementById("forgot-password-contact-text");
-  if (textEl) textEl.textContent = OFFICE_CONTACT_INFO;
+  if (textEl) textEl.textContent = t("officeContactInfo");
   if (modal) modal.style.display = "flex";
 }
 
@@ -1503,25 +1563,25 @@ document.getElementById("change-password-form")?.addEventListener("submit", asyn
   if (errEl) errEl.textContent = "";
 
   if (!currentPw || !newPw || !confirmPw) {
-    if (errEl) errEl.textContent = "Please fill in all password fields.";
+    if (errEl) errEl.textContent = t("errFillAllPasswordFields");
     return;
   }
   if (newPw.length < 10) {
-    if (errEl) errEl.textContent = "New password must be at least 10 characters long.";
+    if (errEl) errEl.textContent = t("errPasswordMinLength");
     return;
   }
   if (currentUserId && newPw.toLowerCase() === String(currentUserId).toLowerCase()) {
-    if (errEl) errEl.textContent = "New password must not be the same as your ID.";
+    if (errEl) errEl.textContent = t("errPasswordSameAsId");
     return;
   }
   if (newPw !== confirmPw) {
-    if (errEl) errEl.textContent = "New password and confirmation do not match.";
+    if (errEl) errEl.textContent = t("errPasswordMismatch");
     return;
   }
 
   const user = auth.currentUser;
   if (!user || !user.email) {
-    if (errEl) errEl.textContent = "You must be signed in to change your password.";
+    if (errEl) errEl.textContent = t("errMustSignInToChangePw");
     return;
   }
 
@@ -1548,13 +1608,13 @@ document.getElementById("change-password-form")?.addEventListener("submit", asyn
     const modal = document.getElementById("change-password-modal");
     if (modal) modal.style.display = "none";
     document.getElementById("change-password-form")?.reset();
-    showToast("Password Updated", "Your password has been changed.", "success");
+    showToast(t("toastPasswordUpdatedTitle"), t("toastPasswordUpdatedMsg"), "success");
   } catch (err) {
     if (errEl) {
       errEl.textContent =
         err?.code === "auth/wrong-password" || err?.code === "auth/invalid-credential"
-          ? "Current password is incorrect."
-          : err?.message || "Could not update password.";
+          ? t("errCurrentPasswordIncorrect")
+          : t("errCouldNotUpdatePassword");
     }
   }
 });
@@ -1585,7 +1645,7 @@ async function handleIdLogin(role) {
   const password = (pwInput?.value || "").trim();
 
   if (!personId || !password) {
-    if (errEl) errEl.textContent = "Please enter both your ID and password.";
+    if (errEl) errEl.textContent = t("errEnterIdAndPassword");
     return;
   }
 
@@ -1607,6 +1667,10 @@ async function handleIdLogin(role) {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (signInErr) {
       const code = signInErr?.code || "";
+      if (code === "auth/too-many-requests") {
+        if (errEl) errEl.textContent = t("errTooManyRequests");
+        return;
+      }
       if (
         (code === "auth/user-not-found" || code === "auth/invalid-credential") &&
         password === initialPassword
@@ -1616,11 +1680,11 @@ async function handleIdLogin(role) {
           wasJustCreated = true;
         } catch (createErr) {
           // Treat auth/email-already-in-use or any creation failure as wrong password
-          if (errEl) errEl.textContent = "Incorrect ID or password.";
+          if (errEl) errEl.textContent = t("errIncorrectIdOrPassword");
           return;
         }
       } else {
-        if (errEl) errEl.textContent = "Incorrect ID or password.";
+        if (errEl) errEl.textContent = t("errIncorrectIdOrPassword");
         return;
       }
     }
@@ -1645,7 +1709,7 @@ async function handleIdLogin(role) {
       try {
         await signOut(auth);
       } catch (_) {}
-      if (errEl) errEl.textContent = "Incorrect ID or password.";
+      if (errEl) errEl.textContent = t("errIncorrectIdOrPassword");
       return;
     }
 
@@ -1689,7 +1753,7 @@ document.getElementById("admin-login-btn")?.addEventListener("click", async (e) 
   if (errEl) errEl.textContent = "";
 
   if (!email || !password) {
-    if (errEl) errEl.textContent = "Please enter admin email and password.";
+    if (errEl) errEl.textContent = t("errEnterAdminEmailAndPassword");
     return;
   }
 
@@ -1701,12 +1765,12 @@ document.getElementById("admin-login-btn")?.addEventListener("click", async (e) 
     const adminSnap = await getDoc(doc(db, "admins", uid));
     if (!adminSnap.exists()) {
       await signOut(auth);
-      if (errEl) errEl.textContent = "This account is not authorized as an administrator.";
+      if (errEl) errEl.textContent = t("errNotAuthorizedAdmin");
       return;
     }
 
     const adminData = adminSnap.data() || {};
-    const adminName = adminData.name || email.split("@")[0] || "Admin";
+    const adminName = adminData.name || email.split("@")[0] || t("defaultAdminLabel");
     currentUserId = uid;
     currentUserName = adminName;
 
@@ -1717,13 +1781,15 @@ document.getElementById("admin-login-btn")?.addEventListener("click", async (e) 
 
     showSection("admin");
     await loadAdminDashboard();
-    showToast("Welcome back!", "Signed in to the International Office portal.", "success");
+    showToast(t("toastWelcomeBackTitle"), t("toastAdminSignedInMsg"), "success");
   } catch (err) {
     if (errEl) {
       errEl.textContent =
         err?.code === "auth/invalid-credential" || err?.code === "auth/wrong-password" || err?.code === "auth/user-not-found"
-          ? "Incorrect email or password."
-          : err?.message || "Admin sign-in failed.";
+          ? t("errIncorrectEmailOrPassword")
+          : err?.code === "auth/too-many-requests"
+            ? t("errTooManyRequests")
+            : t("errAdminSignInFailed");
     }
   } finally {
     isLoginInProgress = false;
@@ -1828,7 +1894,7 @@ onAuthStateChanged(auth, async (user) => {
       }
 
       const adminData = adminSnap.data() || {};
-      const adminName = adminData.name || user.email.split("@")[0] || "Admin";
+      const adminName = adminData.name || user.email.split("@")[0] || t("defaultAdminLabel");
       currentUserId = user.uid;
       currentUserName = adminName;
       if (navUserName) navUserName.textContent = adminName;
@@ -1853,7 +1919,7 @@ onAuthStateChanged(auth, async (user) => {
 // ============================================================
 async function loadStudentDashboard(studentId, studentName) {
   const welcomeEl = document.getElementById("student-welcome-heading");
-  if (welcomeEl) welcomeEl.textContent = `Welcome, ${studentName}`;
+  if (welcomeEl) welcomeEl.textContent = t("welcomeUser", { name: studentName });
 
   const [rosterData, checklistDoc, portalConfig] = await Promise.all([
     dbGetDoc("roster", studentId),
@@ -1994,12 +2060,12 @@ async function loadStudentDashboard(studentId, studentName) {
     }
   } else {
     currentStudentMentorId = null;
-    if (mentorNameEl) mentorNameEl.textContent = "Not Assigned Yet";
+    if (mentorNameEl) mentorNameEl.textContent = t("mentorNotAssignedYet");
     if (mentorInitEl) mentorInitEl.textContent = "--";
-    if (mentorPhoneEl) mentorPhoneEl.textContent = "• Waiting for mentor assignment";
+    if (mentorPhoneEl) mentorPhoneEl.textContent = t("waitingForMentorAssignment");
     if (mentorChatBtnEl) {
       mentorChatBtnEl.disabled = true;
-      mentorChatBtnEl.setAttribute("title", "Direct messaging unlocks once a mentor is assigned to you.");
+      mentorChatBtnEl.setAttribute("title", t("mentorChatLockedTitle"));
     }
   }
 
@@ -2032,16 +2098,18 @@ function renderStudentArcDeadlineAndBanner(tasks, taskDocs, config) {
   if (deadlineBadgeEl) {
     if (isArcApproved) {
       deadlineBadgeEl.className = "arc-deadline-pill completed";
-      deadlineBadgeEl.textContent = `✓ Approved · Due: ${info.formattedDue}`;
+      deadlineBadgeEl.textContent = t("arcPillApproved", { due: info.formattedDue });
     } else if (isArcPendingReview) {
       deadlineBadgeEl.className = "arc-deadline-pill";
-      deadlineBadgeEl.textContent = `⏳ Under Review · Due: ${info.formattedDue}`;
+      deadlineBadgeEl.textContent = t("arcPillUnderReview", { due: info.formattedDue });
     } else {
       const isUrgent = info.isOverdue || info.daysRemaining <= 7;
       deadlineBadgeEl.className = `arc-deadline-pill${isUrgent ? " urgent" : ""}`;
       deadlineBadgeEl.textContent = info.isOverdue
-        ? `📅 Due: ${info.formattedDue} (0 days left · Overdue)`
-        : `📅 Due: ${info.formattedDue} (${info.daysRemaining} ${info.daysRemaining === 1 ? "day" : "days"} left)`;
+        ? t("arcPillOverdue", { due: info.formattedDue })
+        : info.daysRemaining === 1
+        ? t("arcPillDueOneDay", { due: info.formattedDue })
+        : t("arcPillDueDays", { due: info.formattedDue, days: info.daysRemaining });
     }
   }
 
@@ -2058,11 +2126,11 @@ function renderStudentArcDeadlineAndBanner(tasks, taskDocs, config) {
         bannerTextEl.textContent = info.personalizedMessage;
       }
       if (bannerSubEl) {
-        const statusParts = [`Submission deadline: ${info.formattedDue}`];
+        const statusParts = [t("arcBannerSubmissionDeadline", { due: info.formattedDue })];
         if (info.isOverdue) {
-          statusParts.push("Deadline passed — please upload your ARC proof immediately");
+          statusParts.push(t("arcBannerOverdueNote"));
         } else if (warningActive) {
-          statusParts.push("Official reminder from International Office");
+          statusParts.push(t("arcBannerOfficialReminder"));
         }
         bannerSubEl.textContent = statusParts.join(" · ");
       }
@@ -2087,9 +2155,9 @@ function updateStudentProgressUI(tasks) {
   const gaugeCircle = document.getElementById("gauge-val-circle");
   const gaugeVal = document.getElementById("gauge-pct-val");
 
-  if (progressText) progressText.textContent = `${done} of ${total} steps completed`;
+  if (progressText) progressText.textContent = t("stepsCompleted", { done, total });
   if (horizFill) horizFill.style.width = `${pct}%`;
-  if (pctText) pctText.textContent = `${pct}% complete`;
+  if (pctText) pctText.textContent = t("pctComplete", { pct });
   if (gaugeVal) gaugeVal.textContent = `${pct}%`;
 
   if (gaugeCircle) {
@@ -2123,7 +2191,7 @@ document.getElementById("task-doc-input")?.addEventListener("change", async (e) 
   if (!file || !pendingUploadTaskId || !currentUserId) return;
 
   if (file.size > 8 * 1024 * 1024) {
-    showToast("File Too Large", "Please upload an image or PDF smaller than 8 MB.", "error");
+    showToast(t("toastFileTooLargeTitle"), t("toastFileTooLargeMsg"), "error");
     return;
   }
 
@@ -2172,9 +2240,7 @@ document.getElementById("task-doc-input")?.addEventListener("change", async (e) 
 
       showToast(
         t("uploadSuccess"),
-        taskId === "arc"
-          ? "Your ARC proof was sent directly to the International Office (Admin) for review."
-          : "Your proof document has been uploaded.",
+        taskId === "arc" ? t("toastArcProofUploadedMsg") : t("toastTaskProofUploadedMsg"),
         "success"
       );
 
@@ -2184,7 +2250,7 @@ document.getElementById("task-doc-input")?.addEventListener("change", async (e) 
     await performProofUpload();
   } catch (err) {
     if (!err?._syncToastShown) {
-      showToast("Upload Error", err.message || "Failed to read file.", "error");
+      showToast(t("toastUploadErrorTitle"), err.message || t("toastUploadErrorMsg"), "error");
     }
   }
 });
@@ -2194,14 +2260,14 @@ document.getElementById("task-doc-input")?.addEventListener("change", async (e) 
   document.getElementById(btnId)?.addEventListener("click", async () => {
     if (!currentStudentMentorId) {
       showToast(
-        "Mentor Not Assigned Yet",
-        "Direct messaging unlocks automatically once a mentor is assigned to you.",
+        t("toastMentorNotAssignedTitle"),
+        t("toastMentorNotAssignedMsg"),
         "info"
       );
       return;
     }
     const mDoc = await dbGetDoc("roster", currentStudentMentorId);
-    openChatModal(currentStudentMentorId, mDoc?.name || currentStudentMentorId, "Assigned Mentor");
+    openChatModal(currentStudentMentorId, mDoc?.name || currentStudentMentorId, t("assignedMentorRole"));
   });
 });
 
@@ -2304,14 +2370,19 @@ async function loadMentorDashboard(mentorId, mentorName) {
   const kpiReportSub = document.getElementById("kpi-mentor-report-sub");
 
   if (kpiAssigned) kpiAssigned.textContent = String(assignedStudents.length);
-  if (kpiAssignedSub) kpiAssignedSub.textContent = `${assignedStudents.length} active`;
+  if (kpiAssignedSub) kpiAssignedSub.textContent = t("mentorActiveCount", { count: assignedStudents.length });
   if (kpiAttention) kpiAttention.textContent = String(needAttentionCount);
-  if (kpiReportStatus) kpiReportStatus.textContent = `${totalSessionsSubmitted} / ${CYCLE_TOTAL_SESSIONS} sessions`;
+  if (kpiReportStatus) {
+    kpiReportStatus.textContent = t("mentorSessionsCount", {
+      submitted: totalSessionsSubmitted,
+      total: CYCLE_TOTAL_SESSIONS
+    });
+  }
   if (kpiReportSub) {
     kpiReportSub.textContent =
       myReports.length > 0
-        ? `Latest: ${getMonthGroupDisplayName(myReports[0].month)}`
-        : "2 sessions/month · 3-month cycle";
+        ? t("mentorLatestReport", { month: getMonthGroupDisplayName(myReports[0].month) })
+        : t("mentorCycleRuleSub");
   }
 
   // Update Mentor 6-Session Cycle Progress Bar
@@ -2319,7 +2390,10 @@ async function loadMentorDashboard(mentorId, mentorName) {
   const cycleFill = document.getElementById("mentor-cycle-progress-fill");
   const cycleHint = document.getElementById("mentor-cycle-progress-hint");
   if (cycleBadge) {
-    cycleBadge.textContent = `${totalSessionsSubmitted} / ${CYCLE_TOTAL_SESSIONS} Sessions Submitted`;
+    cycleBadge.textContent = t("mentorCycleProgressBadge", {
+      submitted: totalSessionsSubmitted,
+      total: CYCLE_TOTAL_SESSIONS
+    });
     cycleBadge.classList.toggle("complete", totalSessionsSubmitted >= CYCLE_TOTAL_SESSIONS);
   }
   if (cycleFill) cycleFill.style.width = `${cyclePct}%`;
@@ -2327,8 +2401,14 @@ async function loadMentorDashboard(mentorId, mentorName) {
     const distinctMonths = new Set(myReports.map((r) => r.month).filter(Boolean)).size;
     cycleHint.textContent =
       totalSessionsSubmitted >= CYCLE_TOTAL_SESSIONS
-        ? `✓ Full 3-month cycle completed (${CYCLE_TOTAL_SESSIONS} / ${CYCLE_TOTAL_SESSIONS} session PDFs submitted).`
-        : `${cappedDisplaySessions} of ${CYCLE_TOTAL_SESSIONS} required session PDFs uploaded (${distinctMonths} / ${CYCLE_MAX_MONTHS} months active · max ${MONTH_MAX_SESSIONS} sessions/month).`;
+        ? t("mentorCycleCompleteHint", { total: CYCLE_TOTAL_SESSIONS })
+        : t("mentorCycleProgressHint", {
+            submitted: cappedDisplaySessions,
+            total: CYCLE_TOTAL_SESSIONS,
+            months: distinctMonths,
+            maxMonths: CYCLE_MAX_MONTHS,
+            perMonth: MONTH_MAX_SESSIONS
+          });
   }
 
   // Render Targeted Monthly Report Warning Banner ONLY if this mentor was targeted AND still has < 2 files for that month
@@ -2351,7 +2431,7 @@ async function loadMentorDashboard(mentorId, mentorName) {
       const [warnMonthKey, warnData] = activeWarningsForMe[activeWarningsForMe.length - 1];
       const warnMonthFiles = getMentorMonthAggregatedData(mentorId, warnMonthKey, myReports).filesCount;
       const warnGroupLabel = getMonthGroupDisplayName(warnMonthKey);
-      const warnMsg = warnData.message || DEFAULT_MENTOR_REPORT_WARNING_MESSAGE;
+      const warnMsg = warnData.message || t("defaultMentorReportWarningMsg");
 
       mentorWarnBannerEl.style.display = "flex";
       mentorWarnBannerEl.innerHTML = `
@@ -2360,12 +2440,12 @@ async function loadMentorDashboard(mentorId, mentorName) {
           <div>
             <strong style="display: block; font-size: 14px; color: #92400e;">${escapeHtml(warnMsg)}</strong>
             <span style="font-size: 12px; color: #b45309;">
-              ${escapeHtml(warnGroupLabel)} (${escapeHtml(warnMonthKey)}) · Current quota: <strong>${warnMonthFiles}/${MONTH_MAX_SESSIONS} Files Submitted</strong>
+              ${escapeHtml(t("mentorWarnQuotaPrefix", { group: warnGroupLabel, month: warnMonthKey }))} <strong>${escapeHtml(t("filesSubmittedCount", { count: warnMonthFiles, max: MONTH_MAX_SESSIONS }))}</strong>
             </span>
           </div>
         </div>
         <button type="button" class="btn-primary-action" id="btn-mentor-warn-submit-now" style="padding: 7px 14px; font-size: 12.5px;">
-          + Upload Monthly Report →
+          ${escapeHtml(t("btnUploadMonthlyReportNow"))}
         </button>
       `;
 
@@ -2400,7 +2480,7 @@ async function loadMentorDashboard(mentorId, mentorName) {
   const ownReportsEl = document.getElementById("mentor-own-reports-list");
   if (ownReportsEl) {
     if (myReports.length === 0) {
-      ownReportsEl.innerHTML = `<div style="padding: 16px; text-align: center; color: #94a3b8; font-size: 13px;">0 reports submitted yet (0 / ${CYCLE_TOTAL_SESSIONS} sessions).</div>`;
+      ownReportsEl.innerHTML = `<div style="padding: 16px; text-align: center; color: #94a3b8; font-size: 13px;">${escapeHtml(t("noReportsSubmittedYet", { total: CYCLE_TOTAL_SESSIONS }))}</div>`;
     } else {
       const mentorMonths = Array.from(new Set(myReports.map((r) => r.month).filter(Boolean))).sort((a, b) =>
         String(a).localeCompare(String(b))
@@ -2417,14 +2497,14 @@ async function loadMentorDashboard(mentorId, mentorName) {
               return `
                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 7px 11px; margin-top: 6px;">
                   <span style="font-size: 12.5px; color: #0f172a;">
-                    📄 <strong>Session ${idx + 1} - ${escapeHtml(f.name)}</strong>
-                    <span style="font-size: 11px; color: #64748b; margin-left: 6px;">(Cycle Session #${f.cycleSessionNumber} · ${escapeHtml((f.uploadedAt || "").slice(0, 16).replace("T", " "))})</span>
+                    📄 <strong>${escapeHtml(t("sessionFileLabel", { num: idx + 1, name: f.name }))}</strong>
+                    <span style="font-size: 11px; color: #64748b; margin-left: 6px;">${escapeHtml(t("cycleSessionMeta", { cycleNum: f.cycleSessionNumber, date: (f.uploadedAt || "").slice(0, 16).replace("T", " ") }))}</span>
                   </span>
                   <div style="display: flex; gap: 6px; flex-shrink: 0;">
-                    <button type="button" class="btn-table-action" style="padding: 3px 9px; font-size: 11.5px;" ${viewAttr}>👁️ View PDF</button>
+                    <button type="button" class="btn-table-action" style="padding: 3px 9px; font-size: 11.5px;" ${viewAttr}>${escapeHtml(t("btnViewPdf"))}</button>
                     ${
                       f.dataUrl
-                        ? `<a href="${f.dataUrl}" download="${escapeHtml(f.name)}" class="btn-table-action" style="padding: 3px 9px; font-size: 11.5px; text-decoration: none;">⤓ Download</a>`
+                        ? `<a href="${f.dataUrl}" download="${escapeHtml(f.name)}" class="btn-table-action" style="padding: 3px 9px; font-size: 11.5px; text-decoration: none;">${escapeHtml(t("btnDownloadShort"))}</a>`
                         : ""
                     }
                   </div>
@@ -2439,12 +2519,12 @@ async function loadMentorDashboard(mentorId, mentorName) {
                 <div>
                   <strong style="font-size: 13.5px; color: #0f172a;">📁 ${escapeHtml(groupLabel)}</strong>
                   <span class="report-month-period-tag" style="margin-left: 6px;">${escapeHtml(mKey)}</span>
-                  <span style="font-size: 12px; color: #475569; margin-left: 8px; font-weight: 700;">${agg.filesCount}/${MONTH_MAX_SESSIONS} Files Submitted</span>
+                  <span style="font-size: 12px; color: #475569; margin-left: 8px; font-weight: 700;">${escapeHtml(t("filesSubmittedCount", { count: agg.filesCount, max: MONTH_MAX_SESSIONS }))}</span>
                 </div>
-                <span class="status-pill-badge ${isReviewed ? "approved" : "pending"}">${isReviewed ? "✓ Reviewed" : "Pending Review"}</span>
+                <span class="status-pill-badge ${isReviewed ? "approved" : "pending"}">${escapeHtml(isReviewed ? t("statusReviewedBadge") : t("statusPendingReviewBadge"))}</span>
               </div>
               <div style="margin-top: 6px;">${fileRowsHtml}</div>
-              ${agg.adminRemarks ? `<div style="margin-top: 8px; font-size: 12px; color: #0369a1; background: #f0f9ff; padding: 5px 10px; border-radius: 6px;">💬 <strong>Admin Remark:</strong> ${escapeHtml(agg.adminRemarks)}</div>` : ""}
+              ${agg.adminRemarks ? `<div style="margin-top: 8px; font-size: 12px; color: #0369a1; background: #f0f9ff; padding: 5px 10px; border-radius: 6px;">💬 <strong>${escapeHtml(t("adminRemarkLabel"))}</strong> ${escapeHtml(agg.adminRemarks)}</div>` : ""}
             </div>
           `;
         })
@@ -2468,7 +2548,7 @@ async function loadMentorDashboard(mentorId, mentorName) {
   const feedEl = document.getElementById("mentor-activity-feed");
   if (feedEl) {
     if (activityEvents.length === 0) {
-      feedEl.innerHTML = `<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 13px;">No recent mentee activity yet (0).</div>`;
+      feedEl.innerHTML = `<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 13px;">${escapeHtml(t("noRecentMenteeActivity"))}</div>`;
     } else {
       activityEvents.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
       feedEl.innerHTML = activityEvents
@@ -2478,12 +2558,12 @@ async function loadMentorDashboard(mentorId, mentorName) {
             <div style="display: flex; align-items: center; gap: 12px;">
               <div class="activity-dot-icon">📄</div>
               <div class="activity-text-content">
-                <p><strong>${escapeHtml(ev.studentName)}</strong> uploaded proof for <strong>${escapeHtml(getTaskLabel(ev.taskId))}</strong></p>
+                <p><strong>${escapeHtml(ev.studentName)}</strong> ${escapeHtml(t("activityUploadedProofFor"))} <strong>${escapeHtml(getTaskLabel(ev.taskId))}</strong></p>
                 <span>${escapeHtml(ev.timestamp.slice(0, 16).replace("T", " "))}</span>
               </div>
             </div>
             <div>
-              <button type="button" class="btn-table-action" data-review-stu="${escapeHtml(ev.studentId)}" data-review-task="${escapeHtml(ev.taskId)}">Review Proof</button>
+              <button type="button" class="btn-table-action" data-review-stu="${escapeHtml(ev.studentId)}" data-review-task="${escapeHtml(ev.taskId)}">${escapeHtml(t("btnReviewProof"))}</button>
             </div>
           </div>
         `)
@@ -2521,8 +2601,8 @@ function renderMentorStudentCards(students, checklistMap) {
   if (students.length === 0) {
     container.innerHTML = `
       <div style="grid-column: 1 / -1; text-align: center; padding: 36px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; color: #64748b;">
-        <strong>0 assigned students</strong>
-        <p style="margin: 6px 0 0; font-size: 13px;">No students have been assigned to your mentor ID yet.</p>
+        <strong>${escapeHtml(t("zeroAssignedStudents"))}</strong>
+        <p style="margin: 6px 0 0; font-size: 13px;">${escapeHtml(t("noStudentsAssignedDesc"))}</p>
       </div>
     `;
     return;
@@ -2542,16 +2622,23 @@ function renderMentorStudentCards(students, checklistMap) {
         pct >= 75
           ? `<span class="status-pill-badge success">${escapeHtml(t("onTrack"))}</span>`
           : pct >= 35
-          ? `<span class="status-pill-badge pending">In progress (${doneCount}/${CORE_TASKS.length})</span>`
-          : `<span class="status-pill-badge danger">${pendingCount} tasks remaining</span>`;
+          ? `<span class="status-pill-badge pending">${escapeHtml(t("inProgressCount", { done: doneCount, total: CORE_TASKS.length }))}</span>`
+          : `<span class="status-pill-badge danger">${escapeHtml(t("tasksRemainingCount", { count: pendingCount }))}</span>`;
 
       const taskBreakdownRows = CORE_TASKS.filter((tId) => tId !== "arc")
         .map((tId) => {
           const isDone = Boolean(tasks[tId]);
           const dInfo = taskDocs[tId];
-          let actionHtml = `<span style="font-size: 11.5px; color: #94a3b8;">No proof</span>`;
+          let actionHtml = `<span style="font-size: 11.5px; color: #94a3b8;">${escapeHtml(t("noProof"))}</span>`;
           if (dInfo && dInfo.dataUrl) {
-            actionHtml = `<button type="button" class="btn-table-action mentor-doc-review-btn" data-stu="${escapeHtml(stu._id)}" data-task="${escapeHtml(tId)}" style="padding: 3px 8px; font-size: 11px;">👁️ Review (${escapeHtml(dInfo.status || "pending")})</button>`;
+            const stRaw = dInfo.status || "pending";
+            const stLabel =
+              stRaw === "approved"
+                ? t("statusApproved")
+                : stRaw === "rejected"
+                ? t("statusRejected")
+                : t("statusPending");
+            actionHtml = `<button type="button" class="btn-table-action mentor-doc-review-btn" data-stu="${escapeHtml(stu._id)}" data-task="${escapeHtml(tId)}" style="padding: 3px 8px; font-size: 11px;">${escapeHtml(t("reviewWithStatus", { status: stLabel }))}</button>`;
           }
           return `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px dashed #e2e8f0; font-size: 12.5px;">
@@ -2567,14 +2654,14 @@ function renderMentorStudentCards(students, checklistMap) {
           <div class="mentee-card-top">
             <div class="mentee-name-col">
               <h4>${escapeHtml(stu.name || stu._id)}</h4>
-              <p>ID: ${escapeHtml(stu._id)}</p>
+              <p>${escapeHtml(t("idLabel", { id: stu._id }))}</p>
             </div>
             ${statusBadgeHtml}
           </div>
 
           <div class="mentee-bar-section">
             <div class="mentee-bar-labels">
-              <span>${doneCount} of ${CORE_TASKS.length} tasks completed</span>
+              <span>${escapeHtml(t("tasksCompletedOfTotal", { done: doneCount, total: CORE_TASKS.length }))}</span>
               <strong>${pct}%</strong>
             </div>
             <div class="mentee-bar-track">
@@ -2583,16 +2670,16 @@ function renderMentorStudentCards(students, checklistMap) {
           </div>
 
           <div id="mentee-details-${escapeHtml(stu._id)}" style="display: none; margin: 8px 0 4px; background: #f8fafc; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0;">
-            <strong style="font-size: 12px; color: #334155; display: block; margin-bottom: 6px;">Mentee Onboarding Tasks:</strong>
+            <strong style="font-size: 12px; color: #334155; display: block; margin-bottom: 6px;">${escapeHtml(t("menteeOnboardingTasks"))}</strong>
             ${taskBreakdownRows}
           </div>
 
           <div class="mentee-card-footer">
             <button type="button" class="btn-mentee-msg" data-chat-stu="${escapeHtml(stu._id)}" data-chat-name="${escapeHtml(stu.name || stu._id)}">
-              💬 Message
+              ${escapeHtml(t("btnMessageShort"))}
             </button>
             <button type="button" class="btn-mentee-details" data-toggle-details="${escapeHtml(stu._id)}">
-              View details →
+              ${escapeHtml(t("btnViewDetails"))}
             </button>
           </div>
         </div>
@@ -2602,7 +2689,7 @@ function renderMentorStudentCards(students, checklistMap) {
 
   container.querySelectorAll("[data-chat-stu]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      openChatModal(btn.getAttribute("data-chat-stu"), btn.getAttribute("data-chat-name"), "Mentee");
+      openChatModal(btn.getAttribute("data-chat-stu"), btn.getAttribute("data-chat-name"), t("menteeRoleLabelShort"));
     });
   });
 
@@ -2637,7 +2724,7 @@ function renderMentorStudentCards(students, checklistMap) {
 
 // Mentor Topbar Actions: Message Office & Submit Monthly Report
 document.getElementById("mentor-chat-admin-btn")?.addEventListener("click", () => {
-  openChatModal("admin", "International Office (Admin)", "Admin Support");
+  openChatModal("admin", t("internationalOfficeSender"), t("adminSupportRole"));
 });
 
 function isPdfFileObject(file) {
@@ -2717,14 +2804,14 @@ async function refreshMentorReportModalState() {
     if (status1) {
       status1.style.display = "block";
       status1.textContent = storedMonthFiles[0]
-        ? `🔒 Stored: ${storedMonthFiles[0].name} (Protected)`
-        : "🔒 Month locked";
+        ? t("storedFileProtected", { name: storedMonthFiles[0].name })
+        : t("monthLocked");
     }
     if (status2) {
       status2.style.display = "block";
       status2.textContent = storedMonthFiles[1]
-        ? `🔒 Stored: ${storedMonthFiles[1].name} (Protected)`
-        : "🔒 Month locked";
+        ? t("storedFileProtected", { name: storedMonthFiles[1].name })
+        : t("monthLocked");
     }
     if (input1) {
       input1.value = "";
@@ -2766,7 +2853,7 @@ async function refreshMentorReportModalState() {
   }
 
   const selectedSemesterInfo = inferSemesterAndYearFromMonth(selectedMonth);
-  const selectedSemesterLabel = `${SEMESTER_DEFINITIONS[selectedSemesterInfo.semester].label} ${selectedSemesterInfo.year}`;
+  const selectedSemesterLabel = `${getSemesterDefinition(selectedSemesterInfo.semester).label} ${selectedSemesterInfo.year}`;
   const selectedSemesterMonths = getSemesterMonths(selectedSemesterInfo.semester, selectedSemesterInfo.year);
   const mySemesterReports = myReports.filter((r) => isSameSemesterBlock(r.month, selectedMonth));
 
@@ -2776,16 +2863,36 @@ async function refreshMentorReportModalState() {
   const cycleSummaryPills = selectedSemesterMonths
     .map((mk) => {
       const c = getMentorMonthAggregatedData(currentUserId, mk, mySemesterReports).filesCount;
-      return `${getMonthGroupDisplayName(mk).replace(/ Reports$/i, "").slice(0, 3)}: ${c}/${MONTH_MAX_SESSIONS}`;
+      return `${getCalendarMonthShortName(mk)}: ${c}/${MONTH_MAX_SESSIONS}`;
     })
     .join(" · ");
 
   infoBanner.innerHTML = `
-    <strong>${escapeHtml(selectedSemesterLabel)} Progress: ${totalSubmitted} / ${CYCLE_TOTAL_SESSIONS} Total Sessions Completed (${escapeHtml(cycleSummaryPills)})</strong>
+    <strong>${escapeHtml(
+      t("modalSemesterProgressHeader", {
+        semester: selectedSemesterLabel,
+        submitted: totalSubmitted,
+        total: CYCLE_TOTAL_SESSIONS,
+        pills: cycleSummaryPills
+      })
+    )}</strong>
     <span>${
       isMonthAlreadySubmitted
-        ? `✓ ${escapeHtml(getMonthGroupDisplayName(selectedMonth))} already has ${storedMonthFiles.length}/${MONTH_MAX_SESSIONS} file(s) permanently stored. Select another unsubmitted month above.`
-        : `Monthly Requirement for ${escapeHtml(getMonthGroupDisplayName(selectedMonth))}: <strong>2 Session PDFs must be submitted together (${files.length} / ${MONTH_MAX_SESSIONS} valid PDFs selected · ${remainingCycle} left in cycle)</strong>`
+        ? escapeHtml(
+            t("modalMonthAlreadyStoredSub", {
+              group: getMonthGroupDisplayName(selectedMonth),
+              count: storedMonthFiles.length,
+              max: MONTH_MAX_SESSIONS
+            })
+          )
+        : escapeHtml(
+            t("modalMonthRequirementSub", {
+              group: getMonthGroupDisplayName(selectedMonth),
+              selected: files.length,
+              max: MONTH_MAX_SESSIONS,
+              remaining: remainingCycle
+            })
+          )
     }</span>
   `;
 
@@ -2800,49 +2907,57 @@ async function refreshMentorReportModalState() {
       reqNote.style.background = "#f0fdf4";
       reqNote.style.borderColor = "#bbf7d0";
       reqNote.style.color = "#15803d";
-      reqNote.textContent = `✓ ${getMonthGroupDisplayName(selectedMonth)} is already submitted and permanently stored. Choose the next month to upload its 2 session PDFs.`;
+      reqNote.textContent = t("reqNoteMonthAlreadySubmitted", {
+        group: getMonthGroupDisplayName(selectedMonth)
+      });
     } else if (totalSubmitted >= CYCLE_TOTAL_SESSIONS) {
       reqNote.style.background = "#f0fdf4";
       reqNote.style.borderColor = "#bbf7d0";
       reqNote.style.color = "#15803d";
-      reqNote.textContent = `✓ Full 6 / 6 cycle completed for ${selectedSemesterLabel}.`;
+      reqNote.textContent = t("reqNoteCycleCompleted", { semester: selectedSemesterLabel });
     } else if (hasInvalidFileType) {
       reqNote.style.background = "#fef2f2";
       reqNote.style.borderColor = "#fecaca";
       reqNote.style.color = "#dc2626";
-      reqNote.textContent = `✕ Invalid file format: Both Session 1 and Session 2 files must be PDF documents (.pdf).`;
+      reqNote.textContent = t("reqNoteInvalidFileType");
     } else if (hasSameFileSelectedTwice) {
       reqNote.style.background = "#fef2f2";
       reqNote.style.borderColor = "#fecaca";
       reqNote.style.color = "#dc2626";
-      reqNote.textContent = `✕ Duplicate file detected: Session 1 PDF and Session 2 PDF must be two distinct files.`;
+      reqNote.textContent = t("reqNoteDuplicateFiles");
     } else if (!hasBothValidPdfs) {
       reqNote.style.background = "#fff7ed";
       reqNote.style.borderColor = "#fed7aa";
       reqNote.style.color = "#c2410c";
-      reqNote.textContent = `⚠️ Required: Attach both Session 1 PDF and Session 2 PDF together (${rawSelectedCount} / ${MONTH_MAX_SESSIONS} selected). The Submit button stays disabled until both PDFs are chosen.`;
+      reqNote.textContent = t("reqNoteAttachBothPdfs", {
+        selected: rawSelectedCount,
+        max: MONTH_MAX_SESSIONS
+      });
     } else {
       reqNote.style.background = "#f0fdf4";
       reqNote.style.borderColor = "#bbf7d0";
       reqNote.style.color = "#15803d";
-      reqNote.textContent = `✓ Both Session 1 PDF and Session 2 PDF attached together (${MONTH_MAX_SESSIONS} / ${MONTH_MAX_SESSIONS} ready to submit).`;
+      reqNote.textContent = t("reqNoteBothPdfsReady", { max: MONTH_MAX_SESSIONS });
     }
   }
 
   if (submitBtn) {
     submitBtn.disabled = !canSubmitBothPdfs;
     if (isMonthAlreadySubmitted) {
-      submitBtn.textContent = `✓ ${selectedMonth} Already Submitted`;
+      submitBtn.textContent = t("submitBtnMonthSubmitted", { month: selectedMonth });
     } else if (totalSubmitted >= CYCLE_TOTAL_SESSIONS) {
-      submitBtn.textContent = `✓ Cycle Complete (6/6)`;
+      submitBtn.textContent = t("submitBtnCycleComplete");
     } else if (hasInvalidFileType) {
-      submitBtn.textContent = `🔒 Only .pdf Files Allowed`;
+      submitBtn.textContent = t("submitBtnOnlyPdfAllowed");
     } else if (hasSameFileSelectedTwice) {
-      submitBtn.textContent = `🔒 Select 2 Distinct PDFs`;
+      submitBtn.textContent = t("submitBtnSelectTwoDistinctPdfs");
     } else if (!hasBothValidPdfs) {
-      submitBtn.textContent = `🔒 Attach Both 2 PDFs to Submit (${rawSelectedCount}/${MONTH_MAX_SESSIONS})`;
+      submitBtn.textContent = t("submitBtnAttachBothCount", {
+        selected: rawSelectedCount,
+        max: MONTH_MAX_SESSIONS
+      });
     } else {
-      submitBtn.textContent = `📋 Submit 2 PDFs to International Office`;
+      submitBtn.textContent = t("submitBtnReadyToSubmit");
     }
   }
 }
@@ -2903,8 +3018,8 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
 
   if (hasInvalidFileType) {
     showToast(
-      "Invalid File Format",
-      "Both Session 1 and Session 2 attachments must be valid PDF (.pdf) files.",
+      t("toastInvalidFileFormatTitle"),
+      t("toastInvalidFileFormatMsg"),
       "error"
     );
     return;
@@ -2912,8 +3027,8 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
 
   if (hasSameFileSelectedTwice) {
     showToast(
-      "Duplicate Session PDF",
-      "Session 1 and Session 2 cannot be the exact same PDF file. Please select two distinct session PDFs.",
+      t("toastDuplicateSessionPdfTitle"),
+      t("toastDuplicateSessionPdfMsg"),
       "error"
     );
     return;
@@ -2921,8 +3036,8 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
 
   if (!hasBothValidPdfs || collectedFiles.length !== MONTH_MAX_SESSIONS) {
     showToast(
-      "Both Session PDFs Required",
-      "Mentors must submit both Session 1 PDF and Session 2 PDF together (2 PDFs required).",
+      t("toastBothPdfsRequiredTitle"),
+      t("toastBothPdfsRequiredMsg"),
       "error"
     );
     await refreshMentorReportModalState();
@@ -2943,8 +3058,8 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
 
   if (existingMonthSessions > 0) {
     showToast(
-      "Month Already Submitted",
-      `${getMonthGroupDisplayName(month)} already has stored files. Please select the next month to submit its 2 session PDFs.`,
+      t("toastMonthAlreadySubmittedTitle"),
+      t("toastMonthAlreadySubmittedMsg", { group: getMonthGroupDisplayName(month) }),
       "warning"
     );
     await refreshMentorReportModalState();
@@ -2953,8 +3068,11 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
 
   if (existingTotalSessions + collectedFiles.length > CYCLE_TOTAL_SESSIONS) {
     showToast(
-      "Cycle Limit Reached (6 / 6 Sessions)",
-      `You have already submitted ${existingTotalSessions} / ${CYCLE_TOTAL_SESSIONS} sessions in this semester's 3-month cycle.`,
+      t("toastCycleLimitReachedTitle"),
+      t("toastCycleLimitReachedMsg", {
+        submitted: existingTotalSessions,
+        total: CYCLE_TOTAL_SESSIONS
+      }),
       "warning"
     );
     await refreshMentorReportModalState();
@@ -2964,8 +3082,11 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
   const distinctMonths = new Set(mySemesterReports.map((r) => r.month).filter(Boolean));
   if (!distinctMonths.has(month) && distinctMonths.size >= CYCLE_MAX_MONTHS) {
     showToast(
-      "3-Month Cycle Structure",
-      `Your 6 sessions per semester must be submitted across ${CYCLE_MAX_MONTHS} months (${Array.from(distinctMonths).join(", ")}).`,
+      t("toastCycleStructureTitle"),
+      t("toastCycleStructureMsg", {
+        maxMonths: CYCLE_MAX_MONTHS,
+        months: Array.from(distinctMonths).join(", ")
+      }),
       "warning"
     );
     return;
@@ -2981,8 +3102,8 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
   const duplicateUploaded = collectedFiles.find((f) => existingMentorFileSigs.has(`${f.name}__${f.size}`));
   if (duplicateUploaded) {
     showToast(
-      "Duplicate Session Document",
-      `"${duplicateUploaded.name}" is already stored in your mentorship history. Each session PDF must be distinct.`,
+      t("toastDuplicateSessionDocTitle"),
+      t("toastDuplicateSessionDocMsg", { name: duplicateUploaded.name }),
       "error"
     );
     return;
@@ -2991,7 +3112,7 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
   const submitBtn = document.getElementById("mentor-report-submit-btn");
   if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.innerHTML = `<span class="btn-spinner"></span><span>Saving Both PDFs...</span>`;
+    submitBtn.innerHTML = `<span class="btn-spinner"></span><span>${escapeHtml(t("savingBothPdfsSpinner"))}</span>`;
   }
 
   try {
@@ -3062,8 +3183,13 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
 
       const newTotal = existingTotalSessions + sessions;
       showToast(
-        "Both Session PDFs Saved",
-        `Submitted ${sessions} session PDFs for ${getMonthGroupDisplayName(month)} (${newTotal} / ${CYCLE_TOTAL_SESSIONS} Total Sessions Completed).`,
+        t("toastBothSessionPdfsSavedTitle"),
+        t("toastBothSessionPdfsSavedMsg", {
+          sessions,
+          group: getMonthGroupDisplayName(month),
+          newTotal,
+          total: CYCLE_TOTAL_SESSIONS
+        }),
         "success"
       );
       await loadMentorDashboard(currentUserId, currentUserName);
@@ -3072,7 +3198,7 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
     await performReportSubmit();
   } catch (err) {
     if (!err?._syncToastShown) {
-      showToast("Submission Failed", err.message || "Could not submit report.", "error");
+      showToast(t("toastSubmissionFailedTitle"), err.message || t("toastSubmissionFailedMsg"), "error");
     }
   } finally {
     await refreshMentorReportModalState();
@@ -3177,13 +3303,18 @@ function renderAdminAll() {
   const elMentorsSub = document.getElementById("kpi-admin-mentors-sub");
 
   if (elTotalStu) elTotalStu.textContent = String(totalStudents);
-  if (elTotalStuSub) elTotalStuSub.textContent = `${totalStudents} registered`;
+  if (elTotalStuSub) elTotalStuSub.textContent = t("adminRegisteredCount", { count: totalStudents });
   if (elCompPct) elCompPct.textContent = `${avgCompletionPct}%`;
-  if (elCompSub) elCompSub.textContent = `${fullyCompletedStudents} of ${totalStudents} students completed`;
+  if (elCompSub) {
+    elCompSub.textContent = t("adminStudentsCompletedOfTotal", {
+      done: fullyCompletedStudents,
+      total: totalStudents
+    });
+  }
   if (elArcQueue) elArcQueue.textContent = String(pendingArcProofsCount);
-  if (elArcSub) elArcSub.textContent = `${pendingArcProofsCount} pending review`;
+  if (elArcSub) elArcSub.textContent = t("adminPendingReviewCount", { count: pendingArcProofsCount });
   if (elMentors) elMentors.textContent = String(totalMentors);
-  if (elMentorsSub) elMentorsSub.textContent = `${avgStudentsPerMentor} students average`;
+  if (elMentorsSub) elMentorsSub.textContent = t("adminStudentsAverageCount", { avg: avgStudentsPerMentor });
 
   // 2. Update Needs Attention Widget (Strictly 0 when empty + reactive ARC deadline)
   const attentionTotal =
@@ -3199,12 +3330,19 @@ function renderAdminAll() {
   const deadlineInfo = computeArcDeadlineInfo(portalConfigCache?.arcDeadline);
 
   if (elAttBadge) elAttBadge.textContent = String(attentionTotal);
-  if (elAttArc) elAttArc.textContent = `${missingArcStudents} students`;
+  if (elAttArc) elAttArc.textContent = t("attentionArcCountLabel", { count: missingArcStudents });
   if (elAttArcDeadline) {
-    elAttArcDeadline.textContent = `Due: ${deadlineInfo.formattedDue} (${deadlineInfo.daysRemaining} days left)`;
+    elAttArcDeadline.textContent = t("attentionArcDueDynamic", {
+      due: deadlineInfo.formattedDue,
+      days: deadlineInfo.daysRemaining
+    });
   }
-  if (elAttRep) elAttRep.textContent = `${pendingReportsCount} mentor reports`;
-  if (elAttUnassigned) elAttUnassigned.textContent = `${unassignedStudents.length} students`;
+  if (elAttRep) elAttRep.textContent = t("attentionReportsCountLabel", { count: pendingReportsCount });
+  if (elAttUnassigned) {
+    elAttUnassigned.textContent = t("attentionUnassignedCountLabel", {
+      count: unassignedStudents.length
+    });
+  }
 
   // 3. Render ARC Proof Reviews Table & Warning Dispatch Status Badge
   renderAdminArcTable();
@@ -3226,7 +3364,7 @@ function renderAdminAll() {
   const mentorSelect = document.getElementById("roster-mentor-id");
   if (mentorSelect) {
     mentorSelect.innerHTML =
-      `<option value="">Auto-assign by Department (or leave Unassigned)...</option>` +
+      `<option value="">${escapeHtml(t("autoAssignByDeptOption"))}</option>` +
       adminRosterMentors
         .map(
           (m) =>
@@ -3266,7 +3404,7 @@ function renderAdminArcTable() {
     }
   });
 
-  if (pendingBadge) pendingBadge.textContent = `${totalPending} pending`;
+  if (pendingBadge) pendingBadge.textContent = t("pendingCountBadge", { count: totalPending });
 
   const filtered = submissions.filter((item) => {
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
@@ -3280,13 +3418,13 @@ function renderAdminArcTable() {
     return true;
   });
 
-  if (countFooter) countFooter.textContent = `Showing ${filtered.length} submissions`;
+  if (countFooter) countFooter.textContent = t("showingSubmissionsCount", { count: filtered.length });
 
   if (filtered.length === 0) {
     tbody.innerHTML = `
       <tr>
         <td colspan="5" style="text-align: center; padding: 28px; color: #94a3b8;">
-          No ARC proof submissions found (0).
+          ${escapeHtml(t("noArcSubmissionsFound"))}
         </td>
       </tr>
     `;
@@ -3301,7 +3439,7 @@ function renderAdminArcTable() {
         st === "approved" ? t("statusApproved") : st === "rejected" ? t("statusRejected") : t("statusPending");
       const dateStr = item.docInfo.uploadedAt
         ? item.docInfo.uploadedAt.slice(0, 10)
-        : "Recently";
+        : t("recentlyLabel");
 
       return `
         <tr>
@@ -3310,7 +3448,7 @@ function renderAdminArcTable() {
               <div class="table-avatar-sm">${escapeHtml(getInitials(item.studentName))}</div>
               <div class="table-student-info">
                 <strong>${escapeHtml(item.studentName)}</strong>
-                <span>ID: ${escapeHtml(item.studentId)}</span>
+                <span>${escapeHtml(t("idLabel", { id: item.studentId }))}</span>
               </div>
             </div>
           </td>
@@ -3325,10 +3463,10 @@ function renderAdminArcTable() {
             <div class="table-action-btns">
               ${
                 st !== "approved"
-                  ? `<button type="button" class="btn-table-action approve-inline" data-quick-approve-arc="${escapeHtml(item.studentId)}">✓ Approve</button>`
+                  ? `<button type="button" class="btn-table-action approve-inline" data-quick-approve-arc="${escapeHtml(item.studentId)}">${escapeHtml(t("btnApproveShort"))}</button>`
                   : ""
               }
-              <button type="button" class="btn-table-action" data-review-arc="${escapeHtml(item.studentId)}">Review</button>
+              <button type="button" class="btn-table-action" data-review-arc="${escapeHtml(item.studentId)}">${escapeHtml(t("btnReviewShort"))}</button>
             </div>
           </td>
         </tr>
@@ -3339,7 +3477,7 @@ function renderAdminArcTable() {
   tbody.querySelectorAll("[data-quick-approve-arc]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const sId = btn.getAttribute("data-quick-approve-arc");
-      await updateDocumentReviewStatus(sId, "arc", "approved", "Verified by International Office");
+      await updateDocumentReviewStatus(sId, "arc", "approved", t("verifiedByOfficeNote"));
     });
   });
 
@@ -3378,11 +3516,11 @@ function updateAdminArcWarningStatusUI() {
   if (!warnInfo || !warnInfo.lastSentAt) {
     if (badgeEl) {
       badgeEl.className = "warning-dispatch-badge";
-      badgeEl.textContent = "No warning dispatched yet";
+      badgeEl.textContent = t("noWarningDispatchedYet");
     }
     if (btnEl && !isSendingArcWarning) {
       btnEl.disabled = false;
-      btnEl.innerHTML = `<span class="btn-warning-label">🚨 Send Warning to Pending Students</span>`;
+      btnEl.innerHTML = `<span class="btn-warning-label">${escapeHtml(t("btnSendWarningPendingStudents"))}</span>`;
     }
     return;
   }
@@ -3394,7 +3532,10 @@ function updateAdminArcWarningStatusUI() {
 
   if (badgeEl) {
     badgeEl.className = "warning-dispatch-badge sent";
-    badgeEl.textContent = `✓ Last sent: ${sentStamp} (${warnInfo.lastRecipientCount ?? 0} pending)`;
+    badgeEl.textContent = t("lastWarningSentBadge", {
+      date: sentStamp,
+      count: warnInfo.lastRecipientCount ?? 0
+    });
   }
 
   if (!btnEl || isSendingArcWarning) return;
@@ -3404,10 +3545,10 @@ function updateAdminArcWarningStatusUI() {
     const remainSec = Math.ceil((ARC_WARNING_COOLDOWN_MS - elapsed) / 1000);
     if (remainSec > 0) {
       btnEl.disabled = true;
-      btnEl.innerHTML = `<span>⏳ Sent (${remainSec}s cooldown)</span>`;
+      btnEl.innerHTML = `<span>${escapeHtml(t("sentCooldownBtn", { sec: remainSec }))}</span>`;
     } else {
       btnEl.disabled = false;
-      btnEl.innerHTML = `<span class="btn-warning-label">🚨 Send Warning to Pending Students</span>`;
+      btnEl.innerHTML = `<span class="btn-warning-label">${escapeHtml(t("btnSendWarningPendingStudents"))}</span>`;
       if (arcWarningCooldownTimer) {
         clearInterval(arcWarningCooldownTimer);
         arcWarningCooldownTimer = null;
@@ -3439,8 +3580,8 @@ document.getElementById("btn-broadcast-arc-warning")?.addEventListener("click", 
     if (elapsed < ARC_WARNING_COOLDOWN_MS) {
       const waitSec = Math.ceil((ARC_WARNING_COOLDOWN_MS - elapsed) / 1000);
       showToast(
-        "Duplicate Warning Prevented",
-        `An urgent reminder was just dispatched. Please wait ${waitSec}s before sending again.`,
+        t("toastDuplicateWarningPreventedTitle"),
+        t("toastDuplicateWarningPreventedMsg", { sec: waitSec }),
         "warning"
       );
       return;
@@ -3450,7 +3591,7 @@ document.getElementById("btn-broadcast-arc-warning")?.addEventListener("click", 
   // Immediate loading & debounce state
   isSendingArcWarning = true;
   btnEl.disabled = true;
-  btnEl.innerHTML = `<span class="btn-spinner"></span><span>Sending reminder...</span>`;
+  btnEl.innerHTML = `<span class="btn-spinner"></span><span>${escapeHtml(t("sendingReminderSpinner"))}</span>`;
 
   try {
     await new Promise((resolve) => setTimeout(resolve, 450));
@@ -3499,23 +3640,29 @@ document.getElementById("btn-broadcast-arc-warning")?.addEventListener("click", 
       })
     ]);
 
-    const feedbackText = `Urgent reminder successfully sent to ${pendingCount} pending ${pendingCount === 1 ? "student" : "students"}.`;
+    const feedbackText = t("toastUrgentReminderSentMsg", { count: pendingCount });
 
-    showToast("Urgent Reminder Sent", feedbackText, "success");
+    showToast(t("toastUrgentReminderSentTitle"), feedbackText, "success");
 
     const confirmModal = document.getElementById("arc-warning-confirm-modal");
     const confirmTitle = document.getElementById("arc-warning-confirm-title");
     const confirmMsg = document.getElementById("arc-warning-confirm-message");
     const confirmMeta = document.getElementById("arc-warning-confirm-meta");
-    if (confirmTitle) confirmTitle.textContent = "✅ Urgent Reminder Dispatched";
+    if (confirmTitle) confirmTitle.textContent = t("modalUrgentReminderDispatchedTitle");
     if (confirmMsg) confirmMsg.textContent = feedbackText;
     if (confirmMeta) {
-      confirmMeta.textContent = `High-priority blocking popup & OS push notification ("${dlInfo.personalizedMessage}") dispatched strictly to pending Students requiring explicit acknowledgment. Mentors do not receive ARC alerts.`;
+      confirmMeta.textContent = t("modalUrgentReminderDispatchedMeta", {
+        message: dlInfo.personalizedMessage
+      });
     }
     if (confirmModal) confirmModal.style.display = "flex";
   } catch (err) {
     if (!err?._syncToastShown) {
-      showToast("Failed to Send Reminder", err.message || "Please try again.", "error");
+      showToast(
+        t("toastFailedToSendReminderTitle"),
+        err.message || t("toastPleaseTryAgainMsg"),
+        "error"
+      );
     }
   } finally {
     isSendingArcWarning = false;
@@ -3624,7 +3771,7 @@ function syncDepartmentFilterDropdown() {
   );
 
   deptSelect.innerHTML =
-    `<option value="all" ${adminDepartmentFilter === "all" ? "selected" : ""}>All Departments</option>` +
+    `<option value="all" ${adminDepartmentFilter === "all" ? "selected" : ""}>${escapeHtml(t("allDepartmentsOption"))}</option>` +
     sortedDeptEntries
       .map(([key, label]) => {
         const count = deptCountMap.get(key) || 0;
@@ -3669,14 +3816,14 @@ function renderAdminPeopleOverview(avgCompletionPct, unassignedStudents) {
 
   if (headlineEl && subEl) {
     if (activePeopleTab === "mentors") {
-      headlineEl.textContent = `${adminRosterMentors.length} active mentors`;
-      subEl.textContent = `${adminRosterStudents.length} total students supported`;
+      headlineEl.textContent = t("peoplePreviewActiveMentors", { count: adminRosterMentors.length });
+      subEl.textContent = t("peoplePreviewTotalStudentsSupported", { count: adminRosterStudents.length });
     } else if (activePeopleTab === "unassigned") {
-      headlineEl.textContent = `${unassignedStudents.length} unassigned students`;
-      subEl.textContent = `Assign a mentor using the dropdown in the table below`;
+      headlineEl.textContent = t("peoplePreviewUnassignedStudents", { count: unassignedStudents.length });
+      subEl.textContent = t("peoplePreviewAssignMentorSub");
     } else {
-      headlineEl.textContent = `${adminRosterStudents.length} international students`;
-      subEl.textContent = `${avgCompletionPct}% average onboarding completion`;
+      headlineEl.textContent = t("peoplePreviewIntlStudents", { count: adminRosterStudents.length });
+      subEl.textContent = t("peoplePreviewAvgCompletionSub", { pct: avgCompletionPct });
     }
   }
 
@@ -3754,7 +3901,7 @@ function renderDetailedRosterTable() {
   if (filtered.length === 0) {
     listEl.innerHTML = `
       <div style="padding: 28px; text-align: center; color: #94a3b8; font-size: 13.5px;">
-        0 records found in this view. Click <strong>+ Add person</strong> or <strong>Import CSV</strong> to add ${activePeopleTab}.
+        ${escapeHtml(t("noRecordsFoundInView"))}
       </div>
     `;
     return;
@@ -3774,12 +3921,12 @@ function renderDetailedRosterTable() {
         <thead>
           <tr>
             <th style="width: 38px;"><input type="checkbox" id="roster-select-all-cb" /></th>
-            <th>MENTOR</th>
-            <th>MENTOR ID</th>
-            <th>PHONE</th>
-            <th>ASSIGNED MENTEES</th>
-            <th>MONTHLY PROGRESS (${escapeHtml(currentFocusMonth)})</th>
-            <th>ACTION</th>
+            <th>${escapeHtml(t("thMentor"))}</th>
+            <th>${escapeHtml(t("thMentorId"))}</th>
+            <th>${escapeHtml(t("thPhone"))}</th>
+            <th>${escapeHtml(t("thAssignedMentees"))}</th>
+            <th>${escapeHtml(t("thMonthlyProgress", { month: currentFocusMonth }))}</th>
+            <th>${escapeHtml(t("thAction"))}</th>
           </tr>
         </thead>
         <tbody>
@@ -3801,7 +3948,7 @@ function renderDetailedRosterTable() {
                       <div class="table-student-info">
                         <strong>${escapeHtml(m.name || m._id)}</strong>
                         <span class="dept-badge-pill ${mDeptLabel ? "" : "unassigned-dept"}">
-                          🏛️ ${escapeHtml(mDeptLabel || "General Mentor")}
+                          🏛️ ${escapeHtml(mDeptLabel || t("generalMentorBadge"))}
                         </span>
                       </div>
                     </div>
@@ -3810,15 +3957,15 @@ function renderDetailedRosterTable() {
                     <strong>${escapeHtml(m._id)}</strong>
                   </td>
                   <td>${escapeHtml(m.phone || "—")}</td>
-                  <td><span class="status-pill-badge approved">${menteeCount} students</span></td>
+                  <td><span class="status-pill-badge approved">${escapeHtml(t("studentsCountBadge", { count: menteeCount }))}</span></td>
                   <td>
                     <span class="status-pill-badge ${mFiles >= MONTH_MAX_SESSIONS ? "approved" : "pending"}">
-                      ${mFiles} / ${MONTH_MAX_SESSIONS} Files Submitted
+                      ${escapeHtml(t("filesSubmittedCount", { count: mFiles, max: MONTH_MAX_SESSIONS }))}
                     </span>
                   </td>
                   <td>
                     <div class="table-action-btns">
-                      <button type="button" class="btn-table-action" data-chat-person="${escapeHtml(m._id)}" data-chat-name="${escapeHtml(m.name || m._id)}">💬 Message</button>
+                      <button type="button" class="btn-table-action" data-chat-person="${escapeHtml(m._id)}" data-chat-name="${escapeHtml(m.name || m._id)}">${escapeHtml(t("btnMessageShort"))}</button>
                       <button type="button" class="btn-table-action" style="color: #dc2626;" data-delete-person="${escapeHtml(m._id)}">🗑️</button>
                     </div>
                   </td>
@@ -3835,12 +3982,12 @@ function renderDetailedRosterTable() {
         <thead>
           <tr>
             <th style="width: 38px;"><input type="checkbox" id="roster-select-all-cb" /></th>
-            <th>STUDENT &amp; DEPARTMENT</th>
-            <th>STUDENT ID</th>
-            <th>ASSIGNED MENTOR</th>
-            <th>PROGRESS</th>
-            <th>ARC STATUS</th>
-            <th>ACTION</th>
+            <th>${escapeHtml(t("thStudentAndDept"))}</th>
+            <th>${escapeHtml(t("thStudentId"))}</th>
+            <th>${escapeHtml(t("thAssignedMentor"))}</th>
+            <th>${escapeHtml(t("thProgress"))}</th>
+            <th>${escapeHtml(t("thArcStatus"))}</th>
+            <th>${escapeHtml(t("thAction"))}</th>
           </tr>
         </thead>
         <tbody>
@@ -3850,6 +3997,14 @@ function renderDetailedRosterTable() {
               const doneCount = CORE_TASKS.filter((k) => Boolean(cl.tasks?.[k])).length;
               const pct = Math.round((doneCount / CORE_TASKS.length) * 100);
               const arcStatus = cl.taskDocs?.arc?.status || (cl.tasks?.arc ? "approved" : "none");
+              const arcStatusLabel =
+                arcStatus === "none"
+                  ? t("notSubmittedLabel")
+                  : arcStatus === "approved"
+                  ? t("statusApproved")
+                  : arcStatus === "rejected"
+                  ? t("statusRejected")
+                  : t("statusPending");
               const isChecked = selectedRosterIds.has(s._id) ? "checked" : "";
               const sDeptLabel = formatDepartmentLabel(s.department);
               const sDeptKey = normalizeDepartmentKey(sDeptLabel);
@@ -3863,7 +4018,7 @@ function renderDetailedRosterTable() {
               });
 
               const mentorOptions =
-                `<option value="">-- Unassigned --</option>` +
+                `<option value="">${escapeHtml(t("unassignedOption"))}</option>` +
                 sortedMentorsForStudent
                   .map((m) => {
                     const mDept = formatDepartmentLabel(m.department);
@@ -3884,7 +4039,7 @@ function renderDetailedRosterTable() {
                       <div class="table-student-info">
                         <strong>${escapeHtml(s.name || s._id)}</strong>
                         <span class="dept-badge-pill ${sDeptLabel ? "" : "unassigned-dept"}">
-                          🎓 ${escapeHtml(sDeptLabel || "Unassigned Dept")}
+                          🎓 ${escapeHtml(sDeptLabel || t("unassignedDeptBadge"))}
                         </span>
                         ${
                           s.email
@@ -3909,7 +4064,7 @@ function renderDetailedRosterTable() {
                     <span class="status-pill-badge ${
                       arcStatus === "approved" ? "approved" : arcStatus === "rejected" ? "rejected" : "pending"
                     }">
-                      ${arcStatus === "none" ? "Not submitted" : escapeHtml(arcStatus)}
+                      ${escapeHtml(arcStatusLabel)}
                     </span>
                   </td>
                   <td>
@@ -3959,7 +4114,7 @@ function renderDetailedRosterTable() {
           await dbSetDoc("roster", sId, { mentorId: newMentorId }, true, { onRetry: performMentorAssign });
           await dbSetDoc("checklists", sId, { mentorId: newMentorId }, true, { onRetry: performMentorAssign });
           await loadAdminDashboard();
-          showToast("Mentor Updated", `Updated mentor assignment for ${sId}.`, "success");
+          showToast(t("toastMentorUpdatedTitle"), t("toastMentorUpdatedMsg", { id: sId }), "success");
         } catch (_) {
           sel.value = initialMentorId;
         }
@@ -3973,10 +4128,10 @@ function renderDetailedRosterTable() {
     btn.addEventListener("click", () => {
       const targetId = btn.getAttribute("data-chat-person");
       if (!isMessengerPairAuthorized(currentRole, currentUserId, targetId)) {
-        showToast("Access Restricted", "Admins can only message Mentors in Messenger.", "error");
+        showToast(t("toastAccessRestrictedTitle"), t("toastAdminOnlyMentorChatMsg"), "error");
         return;
       }
-      openChatModal(targetId, btn.getAttribute("data-chat-name"), "Mentor");
+      openChatModal(targetId, btn.getAttribute("data-chat-name"), t("mentorRoleLabelShort"));
     });
   });
 
@@ -4000,7 +4155,7 @@ function renderDetailedRosterTable() {
 
           selectedRosterIds.delete(id);
           await loadAdminDashboard();
-          showToast(t("deleteSuccess"), `Removed ${id} from roster.`, "info");
+          showToast(t("deleteSuccess"), t("removedFromRosterMsg", { id }), "info");
         } catch (_) {}
       };
       await performDeletePerson();
@@ -4059,7 +4214,7 @@ document.getElementById("btn-delete-selected-students")?.addEventListener("click
 // ---------- INTERACTIVE NEEDS ATTENTION ROWS ----------
 document.getElementById("btn-attention-arc")?.addEventListener("click", () => {
   document.getElementById("admin-arc-card")?.scrollIntoView({ behavior: "smooth" });
-  showToast("ARC Status", "Review pending ARC proofs or click 'Send Warning to Pending Students'.", "info");
+  showToast(t("toastArcStatusTitle"), t("toastArcStatusMsg"), "info");
 });
 
 document.getElementById("btn-attention-reports")?.addEventListener("click", () => {
@@ -4108,7 +4263,7 @@ document.getElementById("add-person-form")?.addEventListener("submit", async (e)
   let mentorId = normalizeMentorIdValue(document.getElementById("roster-mentor-id")?.value || "");
 
   if (!userId || !name) {
-    showToast("Missing Fields", "Please enter both User ID and Full Name.", "error");
+    showToast(t("toastMissingFieldsTitle"), t("toastMissingFieldsMsg"), "error");
     return;
   }
 
@@ -4121,7 +4276,12 @@ document.getElementById("add-person-form")?.addEventListener("submit", async (e)
       );
       const menDeptKey = normalizeDepartmentKey(targetMentor?.department);
       if (targetMentor && stuDeptKey && menDeptKey && stuDeptKey !== menDeptKey) {
-        deptWarningMsg = `Note: ${targetMentor.name || targetMentor._id} belongs to ${targetMentor.department}, while ${name} is in ${department}.`;
+        deptWarningMsg = t("deptMismatchNoteMsg", {
+          mentorName: targetMentor.name || targetMentor._id,
+          mentorDept: targetMentor.department,
+          studentName: name,
+          studentDept: department
+        });
       }
     } else if (stuDeptKey) {
       // Auto-assign to least-loaded mentor in the same department if mentorId left blank
@@ -4188,13 +4348,18 @@ document.getElementById("add-person-form")?.addEventListener("submit", async (e)
       await loadAdminDashboard();
 
       if (deptWarningMsg) {
-        showToast("Department Mismatch Warning", deptWarningMsg, "warning");
+        showToast(t("toastDeptMismatchWarningTitle"), deptWarningMsg, "warning");
       } else {
+        const deptPart = department ? t("deptPartFormat", { dept: department }) : "";
+        const mentorPart =
+          role === "student"
+            ? t("mentorPartFormat", { mentor: mentorId || t("unassignedLabel") })
+            : "";
         showToast(
-          `Added ${role === "mentor" ? "Mentor" : "Student"}: ${name}`,
-          `ID: ${userId}${department ? ` · Dept: ${department}` : ""}${
-            role === "student" ? ` · Mentor: ${mentorId || "Unassigned"}` : ""
-          }`,
+          role === "mentor"
+            ? t("toastAddedMentorTitle", { name })
+            : t("toastAddedStudentTitle", { name }),
+          t("toastAddedPersonDetailsMsg", { id: userId, deptPart, mentorPart }),
           "success"
         );
       }
@@ -4232,15 +4397,15 @@ function syncImportRosterCardUI() {
   const templateLinkEl = document.getElementById("link-download-csv-template");
 
   if (isMentors) {
-    if (titleEl) titleEl.textContent = "Import Mentor Roster";
-    if (subEl) subEl.textContent = "Upload a CSV file to add or update mentors in bulk.";
+    if (titleEl) titleEl.textContent = t("importMentorRosterTitle");
+    if (subEl) subEl.textContent = t("importMentorRosterSub");
     if (schemaHintEl) schemaHintEl.textContent = "mentor_id,name,department,phone";
-    if (templateLinkEl) templateLinkEl.textContent = "Download Mentor CSV Template";
+    if (templateLinkEl) templateLinkEl.textContent = t("downloadMentorCsvTemplate");
   } else {
-    if (titleEl) titleEl.textContent = "Import Student Roster";
-    if (subEl) subEl.textContent = "Upload a CSV file to add or update international students in bulk.";
+    if (titleEl) titleEl.textContent = t("importRosterTitle");
+    if (subEl) subEl.textContent = t("importRosterSub");
     if (schemaHintEl) schemaHintEl.textContent = "student_id,name,department,mentor_id";
-    if (templateLinkEl) templateLinkEl.textContent = "Download Student CSV Template";
+    if (templateLinkEl) templateLinkEl.textContent = t("downloadCsvTemplate");
   }
 }
 
@@ -4253,16 +4418,16 @@ function getCsvTemplateForRole(role = activeImportRole) {
   if (role === "mentors") {
     return [
       "mentor_id,name,department,phone",
-      "m01,Minjun Kim,Global Business,01012345678",
-      "m02,Seoyeon Park,Computer Science,01023456789",
-      "m03,Daniel Choi,Media & Communication,01034567890"
+      "m01,Test Mentor One,Global Business,01012345678",
+      "m02,Test Mentor Two,Computer Science,01023456789",
+      "m03,Test Mentor Three,Media & Communication,01034567890"
     ].join("\n");
   }
   return [
     "student_id,name,department,mentor_id",
-    "a2024691204,Amr Hassan,Global Business,",
-    "a2024691205,Linh Nguyen,Computer Science,",
-    "a2024691206,Sara Lee,Media & Communication,"
+    "a2024691204,Test Student One,Global Business,",
+    "a2024691205,Test Student Two,Computer Science,",
+    "a2024691206,Test Student Three,Media & Communication,"
   ].join("\n");
 }
 
@@ -4303,7 +4468,9 @@ function openCsvImportFeedbackModal(summary) {
 
   if (titleEl) {
     titleEl.textContent =
-      summary.detectedRole === "mentors" ? "Mentor Roster Import Complete" : "Student Roster Import Complete";
+      summary.detectedRole === "mentors"
+        ? t("mentorRosterImportCompleteTitle")
+        : t("studentRosterImportCompleteTitle");
   }
   if (msgEl) {
     msgEl.textContent = summary.confirmationMessage || "";
@@ -4316,8 +4483,8 @@ function openCsvImportFeedbackModal(summary) {
     const deptItems = Object.entries(summary.departmentBreakdown || {})
       .map(([dept, info]) =>
         summary.detectedRole === "mentors"
-          ? `${escapeHtml(dept)}: ${info.total} mentor(s)`
-          : `${escapeHtml(dept)}: ${info.assigned}/${info.total} assigned`
+          ? escapeHtml(t("deptMentorsCountItem", { dept, total: info.total }))
+          : escapeHtml(t("deptAssignedCountItem", { dept, assigned: info.assigned, total: info.total }))
       )
       .join(" · ");
 
@@ -4360,8 +4527,8 @@ function renderCsvImportSummaryBanner(summary) {
   const deptBreakdownItems = Object.entries(summary.departmentBreakdown || {})
     .map(([dept, info]) =>
       summary.detectedRole === "mentors"
-        ? `${escapeHtml(dept)}: ${info.total} mentor(s)`
-        : `${escapeHtml(dept)}: ${info.assigned}/${info.total} assigned`
+        ? escapeHtml(t("deptMentorsCountItem", { dept, total: info.total }))
+        : escapeHtml(t("deptAssignedCountItem", { dept, assigned: info.assigned, total: info.total }))
     )
     .join(" · ");
 
@@ -4372,17 +4539,17 @@ function renderCsvImportSummaryBanner(summary) {
     : "";
 
   bannerEl.innerHTML = `
-    <strong>${escapeHtml(summary.confirmationMessage || "Bulk CSV Import Summary")}</strong>
+    <strong>${escapeHtml(summary.confirmationMessage || t("bulkCsvImportSummaryTitle"))}</strong>
     ${
       summary.detectedRole === "students"
         ? `<div>
-            Auto-assigned by Department (Round-Robin): <b>${summary.autoAssignedCount}</b> ·
-            Verified Explicit Matches: <b>${summary.explicitValidAssignedCount}</b> ·
-            Unassigned Fallback: <b>${summary.unassignedFallbackCount}</b>
-            ${hasWarnings ? ` · Warnings: <b>${allWarnings.length}</b>` : ""}
+            ${escapeHtml(t("csvSummaryAutoAssignedLabel"))} <b>${summary.autoAssignedCount}</b> ·
+            ${escapeHtml(t("csvSummaryExplicitMatchesLabel"))} <b>${summary.explicitValidAssignedCount}</b> ·
+            ${escapeHtml(t("csvSummaryUnassignedFallbackLabel"))} <b>${summary.unassignedFallbackCount}</b>
+            ${hasWarnings ? ` · ${escapeHtml(t("csvSummaryWarningsLabel"))} <b>${allWarnings.length}</b>` : ""}
           </div>`
         : hasWarnings
-          ? `<div>Validation Warnings: <b>${allWarnings.length}</b></div>`
+          ? `<div>${escapeHtml(t("csvSummaryValidationWarningsLabel"))} <b>${allWarnings.length}</b></div>`
           : ""
     }
     ${deptBreakdownItems ? `<div style="font-size: 11.5px; margin-top: 3px; opacity: 0.9;">${deptBreakdownItems}</div>` : ""}
@@ -4398,7 +4565,7 @@ async function importRosterCsvText(text) {
     .filter(Boolean);
 
   if (lines.length === 0) {
-    throw new Error("The selected CSV file has no rows.");
+    throw new Error(t("errCsvNoRows"));
   }
 
   const firstRowCols = parseCsvRow(lines[0]);
@@ -4456,7 +4623,7 @@ async function importRosterCsvText(text) {
 
       if (!isValidMentorPhone(phone)) {
         phoneValidationErrors.push(
-          `Mentor ${name} (${id}): invalid phone "${phone}". Phone must be an 11-digit continuous number starting with 010 (010XXXXXXXX).`
+          t("errInvalidMentorPhoneCsv", { name, id, phone })
         );
         continue;
       }
@@ -4489,7 +4656,7 @@ async function importRosterCsvText(text) {
         const phone = phoneIdx !== undefined ? (cols[phoneIdx] || "").trim() : "";
         if (phone && !isValidMentorPhone(phone)) {
           phoneValidationErrors.push(
-            `Mentor ${name} (${id}): invalid phone "${phone}". Phone must be an 11-digit continuous number starting with 010 (010XXXXXXXX).`
+            t("errInvalidMentorPhoneCsv", { name, id, phone })
           );
           continue;
         }
@@ -4578,7 +4745,7 @@ async function importRosterCsvText(text) {
     if (deptKey) {
       mentorDepartmentsSet.add(deptKey);
     }
-    const deptDisplay = deptLabel || "Unspecified Department";
+    const deptDisplay = deptLabel || t("unspecifiedDepartment");
     if (isMentorCsvHeader) {
       if (!departmentBreakdown[deptDisplay]) {
         departmentBreakdown[deptDisplay] = { total: 0, assigned: 0, unassigned: 0 };
@@ -4639,7 +4806,7 @@ async function importRosterCsvText(text) {
   for (const stu of parsedStudents) {
     const deptLabel = formatDepartmentLabel(stu.department);
     const deptKey = normalizeDepartmentKey(deptLabel);
-    const deptDisplay = deptLabel || "Unspecified Department";
+    const deptDisplay = deptLabel || t("unspecifiedDepartment");
     if (!departmentBreakdown[deptDisplay]) {
       departmentBreakdown[deptDisplay] = { total: 0, assigned: 0, unassigned: 0 };
     }
@@ -4652,7 +4819,12 @@ async function importRosterCsvText(text) {
       const targetMentor = mentorMap.get(reqMentorClean.toLowerCase());
       if (!targetMentor) {
         departmentMismatchWarnings.push(
-          `Student ${stu.name} (${stu.id}, ${deptDisplay}): specified mentor "${reqMentorClean}" does not exist.`
+          t("errSpecifiedMentorNotExistCsv", {
+            name: stu.name,
+            id: stu.id,
+            dept: deptDisplay,
+            mentor: reqMentorClean
+          })
         );
         // Attempt department auto-match fallback; if no mentor in department, leave Unassigned
         finalMentorId = pickRoundRobinMentorForDept(deptKey);
@@ -4665,9 +4837,14 @@ async function importRosterCsvText(text) {
         // Validate that specified mentor belongs to the student's department
         if (deptKey && mentorDeptKey && deptKey !== mentorDeptKey) {
           departmentMismatchWarnings.push(
-            `Department mismatch for ${stu.name} (${stu.id}): student is in "${deptLabel}", but mentor ${
-              targetMentor.name || targetMentor._id
-            } (${targetMentor._id}) belongs to "${mentorDeptLabel}".`
+            t("errDeptMismatchCsv", {
+              name: stu.name,
+              id: stu.id,
+              stuDept: deptLabel,
+              mentorName: targetMentor.name || targetMentor._id,
+              mentorId: targetMentor._id,
+              mentorDept: mentorDeptLabel
+            })
           );
           // Do not assign a mismatched-department mentor; auto-assign within student's department or fallback to Unassigned
           finalMentorId = pickRoundRobinMentorForDept(deptKey);
@@ -4727,8 +4904,14 @@ async function importRosterCsvText(text) {
   const mentorDepartmentsCount = mentorDepartmentsSet.size;
   const confirmationMessage =
     detectedRole === "mentors"
-      ? `Successfully imported ${importedMentors} Mentors across ${mentorDepartmentsCount} departments.`
-      : `Successfully imported ${importedStudents} Students. Auto-assigned ${autoAssignedCount} students to matching department mentors.`;
+      ? t("csvConfirmMentorsImported", {
+          count: importedMentors,
+          depts: mentorDepartmentsCount
+        })
+      : t("csvConfirmStudentsImported", {
+          count: importedStudents,
+          assigned: autoAssignedCount
+        });
 
   const summary = {
     detectedRole,
@@ -4804,13 +4987,13 @@ async function processRosterCsvFile(file) {
     const totalWarnings =
       (summary.departmentMismatchWarnings?.length || 0) + (summary.phoneValidationErrors?.length || 0);
     if (totalWarnings > 0) {
-      showToast("CSV Imported with Warnings", summary.confirmationMessage, "warning");
+      showToast(t("toastCsvImportedWarningsTitle"), summary.confirmationMessage, "warning");
     } else {
-      showToast("CSV Import Complete", summary.confirmationMessage, "success");
+      showToast(t("toastCsvImportCompleteTitle"), summary.confirmationMessage, "success");
     }
   } catch (err) {
     if (!err?._syncToastShown) {
-      showToast("CSV Import Error", err.message || "Failed to parse CSV file.", "error");
+      showToast(t("toastCsvImportErrorTitle"), err.message || t("toastCsvImportErrorMsg"), "error");
     }
   }
 }
@@ -4935,7 +5118,10 @@ function renderAdminMonthlyReports() {
     0
   );
   if (badge) {
-    badge.textContent = `${totalFilesAcrossAll} ${totalFilesAcrossAll === 1 ? "file" : "files"} · ${totalSessionsAcrossAll} ${totalSessionsAcrossAll === 1 ? "session" : "sessions"}`;
+    badge.textContent = t("adminReportsCountBadge", {
+      files: totalFilesAcrossAll,
+      sessions: totalSessionsAcrossAll
+    });
   }
   if (!listEl) return;
 
@@ -4957,8 +5143,7 @@ function renderAdminMonthlyReports() {
   const springMonthsForYear = getSemesterMonths("spring", adminSelectedAcademicYear);
   const semesterMonths =
     adminSelectedSemester === "spring" ? springMonthsForYear : fallMonthsForYear;
-  const activeSemesterMeta =
-    SEMESTER_DEFINITIONS[adminSelectedSemester] || SEMESTER_DEFINITIONS.fall;
+  const activeSemesterMeta = getSemesterDefinition(adminSelectedSemester);
 
   // Retrieve ONLY the months checked/selected by the Admin for this semester
   const selectedMonths = getActiveCheckedMonthsForSemester(
@@ -4987,12 +5172,14 @@ function renderAdminMonthlyReports() {
     const yearOptionsHtml = availableYears
       .map(
         (yr) =>
-          `<option value="${yr}" ${yr === adminSelectedAcademicYear ? "selected" : ""}>${yr} – ${yr + 1} Academic Year</option>`
+          `<option value="${yr}" ${yr === adminSelectedAcademicYear ? "selected" : ""}>${escapeHtml(
+            t("academicYearOption", { start: yr, end: yr + 1 })
+          )}</option>`
       )
       .join("");
 
     semesterBarEl.innerHTML = `
-      <div class="semester-toggle-group" role="tablist" aria-label="Select Semester">
+      <div class="semester-toggle-group" role="tablist" aria-label="${escapeHtml(t("selectSemesterAria"))}">
         <button
           type="button"
           class="semester-toggle-btn ${adminSelectedSemester === "fall" ? "active" : ""}"
@@ -5000,9 +5187,9 @@ function renderAdminMonthlyReports() {
           role="tab"
           aria-selected="${adminSelectedSemester === "fall"}"
         >
-          <span>🍂 Fall Semester</span>
-          <span class="semester-toggle-sub">Sep – Feb (6 Months)</span>
-          <span class="semester-toggle-badge">${fallFilesCount} PDFs</span>
+          <span>🍂 ${escapeHtml(t("fallSemesterLabel"))}</span>
+          <span class="semester-toggle-sub">${escapeHtml(t("fallSemesterShortRange"))}</span>
+          <span class="semester-toggle-badge">${escapeHtml(t("pdfsCountBadge", { count: fallFilesCount }))}</span>
         </button>
         <button
           type="button"
@@ -5011,13 +5198,13 @@ function renderAdminMonthlyReports() {
           role="tab"
           aria-selected="${adminSelectedSemester === "spring"}"
         >
-          <span>🌱 Spring Semester</span>
-          <span class="semester-toggle-sub">Mar – Aug (6 Months)</span>
-          <span class="semester-toggle-badge">${springFilesCount} PDFs</span>
+          <span>🌱 ${escapeHtml(t("springSemesterLabel"))}</span>
+          <span class="semester-toggle-sub">${escapeHtml(t("springSemesterShortRange"))}</span>
+          <span class="semester-toggle-badge">${escapeHtml(t("pdfsCountBadge", { count: springFilesCount }))}</span>
         </button>
       </div>
       <div class="semester-year-control">
-        <label for="admin-reports-year-select">Academic Year:</label>
+        <label for="admin-reports-year-select">${escapeHtml(t("academicYearLabel"))}</label>
         <select id="admin-reports-year-select" class="checklist-filter-select" style="padding: 6px 10px; font-size: 12.5px;">
           ${yearOptionsHtml}
         </select>
@@ -5077,7 +5264,11 @@ function renderAdminMonthlyReports() {
               </span>
               ${
                 monthPdfCount > 0
-                  ? `<span class="month-check-pdf-badge">${monthPdfCount} PDF${monthPdfCount === 1 ? "" : "s"}</span>`
+                  ? `<span class="month-check-pdf-badge">${escapeHtml(
+                      monthPdfCount === 1
+                        ? t("onePdfBadge")
+                        : t("pdfsCountBadge", { count: monthPdfCount })
+                    )}</span>`
                   : ""
               }
             </label>
@@ -5088,15 +5279,25 @@ function renderAdminMonthlyReports() {
       checklistEl.innerHTML = `
         <div class="month-checklist-top">
           <div class="month-checklist-title-wrap">
-            <strong>☑️ Select Active Months — ${escapeHtml(activeSemesterMeta.label)} (${escapeHtml(activeSemesterMeta.rangeLabel)})</strong>
-            <span class="month-checklist-count-pill">${selectedMonths.length} of ${semesterMonths.length} Selected</span>
+            <strong>${escapeHtml(
+              t("selectActiveMonthsHeading", {
+                semester: activeSemesterMeta.label,
+                range: activeSemesterMeta.rangeLabel
+              })
+            )}</strong>
+            <span class="month-checklist-count-pill">${escapeHtml(
+              t("selectedMonthsCountPill", {
+                selected: selectedMonths.length,
+                total: semesterMonths.length
+              })
+            )}</span>
           </div>
           <div class="month-checklist-actions">
             <button type="button" class="btn-table-action" id="btn-check-all-semester-months" style="padding: 4px 10px; font-size: 11.5px;">
-              Select All 6
+              ${escapeHtml(t("btnSelectAllSix"))}
             </button>
             <button type="button" class="btn-table-action" id="btn-clear-all-semester-months" style="padding: 4px 10px; font-size: 11.5px;">
-              Clear All
+              ${escapeHtml(t("btnClearAll"))}
             </button>
           </div>
         </div>
@@ -5168,8 +5369,8 @@ function renderAdminMonthlyReports() {
         .join(", ");
       listEl.innerHTML = `
         <div class="month-empty-selection-box">
-          <h4>No Active Months Selected for ${escapeHtml(activeSemesterMeta.label)}</h4>
-          <p>Check any subset of months above (e.g., <strong>${escapeHtml(exampleNames)}</strong>) to generate their active report folders.</p>
+          <h4>${escapeHtml(t("noActiveMonthsSelectedHeading", { semester: activeSemesterMeta.label }))}</h4>
+          <p>${escapeHtml(t("noActiveMonthsSelectedSub", { examples: exampleNames }))}</p>
         </div>
       `;
       return;
@@ -5211,12 +5412,18 @@ function renderAdminMonthlyReports() {
 
                   <div class="month-folder-stats" style="margin-top: 16px;">
                     <div class="month-folder-stat-row">
-                      <span>Mentors Submitted</span>
-                      <strong>${mentorsWithAnyFiles} / ${allMentors.length} Mentors (${mentorsCompletedMonth} at 2/2)</strong>
+                      <span>${escapeHtml(t("mentorsSubmittedLabel"))}</span>
+                      <strong>${escapeHtml(
+                        t("mentorsSubmittedValue", {
+                          withFiles: mentorsWithAnyFiles,
+                          total: allMentors.length,
+                          completed: mentorsCompletedMonth
+                        })
+                      )}</strong>
                     </div>
                     <div class="month-folder-stat-row">
-                      <span>Stored Session PDFs</span>
-                      <strong>${totalMonthFiles} ${totalMonthFiles === 1 ? "PDF File" : "PDF Files"}</strong>
+                      <span>${escapeHtml(t("storedSessionPdfsLabel"))}</span>
+                      <strong>${escapeHtml(t("storedSessionPdfsValue", { count: totalMonthFiles }))}</strong>
                     </div>
                     <div class="cycle-bar-mini" style="margin-top: 2px;">
                       <div class="cycle-bar-mini-fill ${isAllDone ? "done" : ""}" style="width: ${completionPct}%;"></div>
@@ -5225,7 +5432,7 @@ function renderAdminMonthlyReports() {
                 </div>
 
                 <div class="month-folder-cta">
-                  <span>Open Mentor Directory</span>
+                  <span>${escapeHtml(t("openMentorDirectoryCta"))}</span>
                   <span>→</span>
                 </div>
               </div>
@@ -5278,7 +5485,7 @@ function renderAdminMonthlyReports() {
         return `
           <button type="button" class="month-tab-pill ${isCurrent ? "active" : ""}" data-switch-month="${escapeHtml(mk)}">
             <span>📁 ${escapeHtml(getMonthGroupDisplayName(mk))}</span>
-            <span class="tab-count">${mFiles} PDFs</span>
+            <span class="tab-count">${escapeHtml(t("pdfsCountBadge", { count: mFiles }))}</span>
           </button>
         `;
       })
@@ -5287,7 +5494,7 @@ function renderAdminMonthlyReports() {
     breadcrumbEl.innerHTML = `
       <div class="month-tabs-switcher">
         <button type="button" class="btn-back-months" id="btn-back-to-month-folders">
-          ← Active Months (${selectedMonths.length})
+          ${escapeHtml(t("btnBackActiveMonths", { count: selectedMonths.length }))}
         </button>
         ${activeMonthPillsHtml}
       </div>
@@ -5296,14 +5503,20 @@ function renderAdminMonthlyReports() {
           type="text"
           id="admin-month-mentor-search"
           class="mentee-search-input"
-          placeholder="Search mentor name or ID..."
+          placeholder="${escapeHtml(t("searchMentorNameOrIdPlaceholder"))}"
           value="${escapeHtml(adminMonthMentorSearch)}"
           style="width: 195px; padding: 6px 11px; font-size: 12.5px;"
         />
         <select id="admin-month-status-filter" class="checklist-filter-select" style="padding: 6px 10px; font-size: 12.5px;">
-          <option value="all" ${adminMonthMentorStatusFilter === "all" ? "selected" : ""}>All (${allMentors.length})</option>
-          <option value="submitted" ${adminMonthMentorStatusFilter === "submitted" ? "selected" : ""}>Submitted: ${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS} (${completedCount})</option>
-          <option value="pending" ${adminMonthMentorStatusFilter === "pending" ? "selected" : ""}>Unsubmitted / Pending: 0/${MONTH_MAX_SESSIONS} or 1/${MONTH_MAX_SESSIONS} (${pendingCount})</option>
+          <option value="all" ${adminMonthMentorStatusFilter === "all" ? "selected" : ""}>${escapeHtml(
+            t("filterAllMentorsCount", { count: allMentors.length })
+          )}</option>
+          <option value="submitted" ${adminMonthMentorStatusFilter === "submitted" ? "selected" : ""}>${escapeHtml(
+            t("filterSubmittedMentorsCount", { max: MONTH_MAX_SESSIONS, count: completedCount })
+          )}</option>
+          <option value="pending" ${adminMonthMentorStatusFilter === "pending" ? "selected" : ""}>${escapeHtml(
+            t("filterPendingMentorsCount", { max: MONTH_MAX_SESSIONS, count: pendingCount })
+          )}</option>
         </select>
       </div>
     `;
@@ -5374,7 +5587,7 @@ function renderAdminMonthlyReports() {
   if (allMentors.length === 0) {
     listEl.innerHTML = `
       <div style="text-align: center; padding: 28px; color: #94a3b8; font-size: 13.5px; border: 1px solid #e2e8f0; border-radius: 12px;">
-        0 mentors registered in the roster yet. Add mentors in the People section above.
+        ${escapeHtml(t("noMentorsRegisteredYet"))}
       </div>
     `;
     return;
@@ -5384,7 +5597,12 @@ function renderAdminMonthlyReports() {
   let lastMentorWarnHtml = "";
   if (monthWarnInfo && monthWarnInfo.sentAt) {
     const sentStamp = String(monthWarnInfo.sentAt).slice(0, 16).replace("T", " ");
-    lastMentorWarnHtml = `<span class="warning-dispatch-badge sent">✓ Last warning sent: ${escapeHtml(sentStamp)} (${monthWarnInfo.recipientCount ?? 0} pending)</span>`;
+    lastMentorWarnHtml = `<span class="warning-dispatch-badge sent">${escapeHtml(
+      t("lastMentorWarningSentBadge", {
+        date: sentStamp,
+        count: monthWarnInfo.recipientCount ?? 0
+      })
+    )}</span>`;
   }
 
   listEl.innerHTML = `
@@ -5392,10 +5610,10 @@ function renderAdminMonthlyReports() {
       <div class="report-month-group-header">
         <div class="report-month-folder-title">
           <span>📂</span>
-          <h4>${escapeHtml(activeMonthLabel)} — Mentor Directory</h4>
+          <h4>${escapeHtml(t("mentorDirectoryFolderTitle", { group: activeMonthLabel }))}</h4>
           <span class="report-month-period-tag">${escapeHtml(activeSemesterMeta.label)} · ${escapeHtml(activeMonth)}</span>
           <span class="status-pill-badge approved" style="font-size: 11px;">
-            ${totalMonthFilesAll} Session ${totalMonthFilesAll === 1 ? "PDF" : "PDFs"} Stored
+            ${escapeHtml(t("sessionPdfsStoredBadge", { count: totalMonthFilesAll }))}
           </span>
         </div>
       </div>
@@ -5405,16 +5623,30 @@ function renderAdminMonthlyReports() {
           <span
             class="pending-mentors-count-badge ${pendingCount === 0 ? "all-clear" : ""}"
             id="badge-pending-mentors-count"
-            title="Click to isolate pending/incomplete mentors"
+            title="${escapeHtml(t("isolatePendingMentorsTitle"))}"
             style="cursor: ${pendingCount > 0 ? "pointer" : "default"};"
           >
-            ${pendingCount === 0 ? "✓" : "⏳"} ${pendingCount} ${pendingCount === 1 ? "Mentor" : "Mentors"} Pending Submission
+            ${pendingCount === 0 ? "✓" : "⏳"} ${escapeHtml(
+              t("mentorsPendingSubmissionBadge", { count: pendingCount })
+            )}
           </span>
           <span style="font-size: 12px; color: #475569;">
             ${
               pendingCount === 0
-                ? `All ${allMentors.length} mentors have completed ${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS} files for ${escapeHtml(activeMonthLabel)}.`
-                : `${completedCount} submitted (${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS}) · ${pendingCount} unsubmitted/pending (0/${MONTH_MAX_SESSIONS} or 1/${MONTH_MAX_SESSIONS}).`
+                ? escapeHtml(
+                    t("allMentorsCompletedMonthMsg", {
+                      total: allMentors.length,
+                      max: MONTH_MAX_SESSIONS,
+                      group: activeMonthLabel
+                    })
+                  )
+                : escapeHtml(
+                    t("submittedAndPendingSummaryMsg", {
+                      completed: completedCount,
+                      max: MONTH_MAX_SESSIONS,
+                      pending: pendingCount
+                    })
+                  )
             }
           </span>
           ${lastMentorWarnHtml}
@@ -5425,7 +5657,7 @@ function renderAdminMonthlyReports() {
           id="btn-warn-unsubmitted-mentors"
           ${pendingCount === 0 || isSendingMentorReportWarning ? "disabled" : ""}
         >
-          <span class="btn-warning-label">🚨 Send Warning to Unsubmitted Mentors</span>
+          <span class="btn-warning-label">${escapeHtml(t("btnSendWarningUnsubmittedMentors"))}</span>
         </button>
       </div>
 
@@ -5433,16 +5665,18 @@ function renderAdminMonthlyReports() {
         <table class="clean-admin-table">
           <thead>
             <tr>
-              <th>MENTOR NAME &amp; ID</th>
-              <th>MONTH STATUS</th>
-              <th>MONTHLY PROGRESS</th>
-              <th>ACTION</th>
+              <th>${escapeHtml(t("thMentorNameAndId"))}</th>
+              <th>${escapeHtml(t("thMonthStatus"))}</th>
+              <th>${escapeHtml(t("thProgress"))}</th>
+              <th>${escapeHtml(t("thAction"))}</th>
             </tr>
           </thead>
           <tbody>
             ${
               mentorRowsData.length === 0
-                ? `<tr><td colspan="4" style="text-align: center; padding: 24px; color: #94a3b8;">No mentors match the current search/filter in ${escapeHtml(activeMonthLabel)}.</td></tr>`
+                ? `<tr><td colspan="4" style="text-align: center; padding: 24px; color: #94a3b8;">${escapeHtml(
+                    t("noMentorsMatchFilter", { group: activeMonthLabel })
+                  )}</td></tr>`
                 : mentorRowsData
                     .map(({ mentor, monthAgg }) => {
                       const mFiles = Math.min(MONTH_MAX_SESSIONS, monthAgg.filesCount);
@@ -5452,24 +5686,48 @@ function renderAdminMonthlyReports() {
                       let monthStatusHtml = "";
                       if (isMonthComplete) {
                         monthStatusHtml = `
-                          <span class="status-pill-badge approved">✓ ${monthAgg.filesCount}/${MONTH_MAX_SESSIONS} Files Submitted</span>
-                          ${monthAgg.status === "reviewed" ? `<span class="status-pill-badge approved" style="margin-left: 4px; font-size: 10.5px;">Reviewed</span>` : ""}
+                          <span class="status-pill-badge approved">✓ ${escapeHtml(
+                            t("filesSubmittedCount", {
+                              count: monthAgg.filesCount,
+                              max: MONTH_MAX_SESSIONS
+                            })
+                          )}</span>
+                          ${
+                            monthAgg.status === "reviewed"
+                              ? `<span class="status-pill-badge approved" style="margin-left: 4px; font-size: 10.5px;">${escapeHtml(
+                                  t("reviewedShortBadge")
+                                )}</span>`
+                              : ""
+                          }
                         `;
                       } else if (monthAgg.filesCount > 0) {
-                        monthStatusHtml = `<span class="status-pill-badge pending">• ${monthAgg.filesCount}/${MONTH_MAX_SESSIONS} Files Submitted</span>`;
+                        monthStatusHtml = `<span class="status-pill-badge pending">• ${escapeHtml(
+                          t("filesSubmittedCount", {
+                            count: monthAgg.filesCount,
+                            max: MONTH_MAX_SESSIONS
+                          })
+                        )}</span>`;
                       } else {
-                        monthStatusHtml = `<span class="status-pill-badge" style="background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;">Pending (0/${MONTH_MAX_SESSIONS})</span>`;
+                        monthStatusHtml = `<span class="status-pill-badge" style="background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;">${escapeHtml(
+                          t("pendingZeroOfMaxBadge", { max: MONTH_MAX_SESSIONS })
+                        )}</span>`;
                       }
 
                       const latestSubNote = monthAgg.latestSubmissionAt
-                        ? `<div style="font-size: 11px; color: #64748b; margin-top: 3px;">Last upload: ${escapeHtml(monthAgg.latestSubmissionAt.slice(0, 16).replace("T", " "))}</div>`
+                        ? `<div style="font-size: 11px; color: #64748b; margin-top: 3px;">${escapeHtml(
+                            t("lastUploadTimestamp", {
+                              date: monthAgg.latestSubmissionAt.slice(0, 16).replace("T", " ")
+                            })
+                          )}</div>`
                         : "";
 
                       return `
                         <tr class="mentor-directory-row" data-inspect-mentor="${escapeHtml(mentor.id)}" data-inspect-month="${escapeHtml(activeMonth)}">
                           <td>
                             <strong style="font-size: 13.5px; color: #0f172a;">${escapeHtml(mentor.name)}</strong>
-                            <div style="font-size: 11.5px; color: #64748b;">ID: ${escapeHtml(mentor.id)}</div>
+                            <div style="font-size: 11.5px; color: #64748b;">${escapeHtml(
+                              t("idLabel", { id: mentor.id })
+                            )}</div>
                           </td>
                           <td>
                             <div>${monthStatusHtml}</div>
@@ -5477,7 +5735,12 @@ function renderAdminMonthlyReports() {
                           </td>
                           <td>
                             <div class="inline-cycle-progress">
-                              <span class="inline-cycle-progress-label">${monthAgg.filesCount} / ${MONTH_MAX_SESSIONS} Files Submitted</span>
+                              <span class="inline-cycle-progress-label">${escapeHtml(
+                                t("filesSubmittedCount", {
+                                  count: monthAgg.filesCount,
+                                  max: MONTH_MAX_SESSIONS
+                                })
+                              )}</span>
                               <div class="cycle-bar-mini">
                                 <div class="cycle-bar-mini-fill ${isMonthComplete ? "done" : ""}" style="width: ${monthPct}%;"></div>
                               </div>
@@ -5485,7 +5748,13 @@ function renderAdminMonthlyReports() {
                           </td>
                           <td>
                             <button type="button" class="btn-table-action" data-inspect-btn="${escapeHtml(mentor.id)}" style="font-weight: 700;">
-                              ${monthAgg.filesCount > 0 ? `📂 Inspect ${monthAgg.filesCount} PDF${monthAgg.filesCount === 1 ? "" : "s"} →` : "🔍 Inspect →"}
+                              ${
+                                monthAgg.filesCount > 0
+                                  ? escapeHtml(
+                                      t("btnInspectPdfsCount", { count: monthAgg.filesCount })
+                                    )
+                                  : escapeHtml(t("btnInspectEmpty"))
+                              }
                             </button>
                           </td>
                         </tr>
@@ -5530,7 +5799,7 @@ async function dispatchWarningToUnsubmittedMentors(monthKey) {
   });
 
   if (pendingMentors.length === 0) {
-    showToast("No Pending Mentors", "All mentors have already submitted 2/2 files for this month.", "info");
+    showToast(t("toastNoPendingMentorsTitle"), t("toastNoPendingMentorsMsg"), "info");
     return;
   }
 
@@ -5538,14 +5807,14 @@ async function dispatchWarningToUnsubmittedMentors(monthKey) {
   isSendingMentorReportWarning = true;
   if (btnEl) {
     btnEl.disabled = true;
-    btnEl.innerHTML = `<span class="btn-spinner"></span><span>Sending warning...</span>`;
+    btnEl.innerHTML = `<span class="btn-spinner"></span><span>${escapeHtml(t("sendingWarningSpinner"))}</span>`;
   }
 
   try {
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     const nowIso = new Date().toISOString();
-    const warningMessage = DEFAULT_MENTOR_REPORT_WARNING_MESSAGE; // "Please submit your monthly report."
+    const warningMessage = t("defaultMentorReportWarningMsg");
     const monthLabel = getMonthGroupDisplayName(monthKey);
 
     // System A: High-Priority Urgent Institutional Warning (strictly separated from System B casual Messenger)
@@ -5585,23 +5854,31 @@ async function dispatchWarningToUnsubmittedMentors(monthKey) {
     ]);
 
     const count = pendingMentors.length;
-    const feedbackText = `Urgent warning sent successfully to ${count} pending ${count === 1 ? "mentor" : "mentors"}.`;
+    const feedbackText = t("toastUrgentWarningSentMsg", { count });
 
-    showToast("Urgent Warning Sent", feedbackText, "success");
+    showToast(t("toastUrgentWarningSentTitle"), feedbackText, "success");
 
     const confirmModal = document.getElementById("arc-warning-confirm-modal");
     const confirmTitle = document.getElementById("arc-warning-confirm-title");
     const confirmMsg = document.getElementById("arc-warning-confirm-message");
     const confirmMeta = document.getElementById("arc-warning-confirm-meta");
-    if (confirmTitle) confirmTitle.textContent = "✅ Mentor Report Warning Sent";
+    if (confirmTitle) confirmTitle.textContent = t("modalMentorWarningSentTitle");
     if (confirmMsg) confirmMsg.textContent = feedbackText;
     if (confirmMeta) {
-      confirmMeta.textContent = `High-priority blocking popup & OS push notification dispatched: "${warningMessage}" (${monthLabel}). Mentors who already submitted ${MONTH_MAX_SESSIONS}/${MONTH_MAX_SESSIONS} files were automatically bypassed.`;
+      confirmMeta.textContent = t("modalMentorWarningSentMeta", {
+        message: warningMessage,
+        month: monthLabel,
+        max: MONTH_MAX_SESSIONS
+      });
     }
     if (confirmModal) confirmModal.style.display = "flex";
   } catch (err) {
     if (!err?._syncToastShown) {
-      showToast("Failed to Send Warning", err.message || "Please try again.", "error");
+      showToast(
+        t("toastFailedToSendWarningTitle"),
+        err.message || t("toastPleaseTryAgainMsg"),
+        "error"
+      );
     }
   } finally {
     isSendingMentorReportWarning = false;
@@ -5640,7 +5917,7 @@ document.getElementById("btn-export-mentor-pdfs")?.addEventListener("click", () 
   });
 
   if (downloadableFiles.length === 0) {
-    showToast("No PDFs to Export", "There are 0 session PDF attachments in the active view.", "info");
+    showToast(t("toastNoPdfsToExportTitle"), t("toastNoPdfsToExportMsg"), "info");
     return;
   }
 
@@ -5655,13 +5932,16 @@ document.getElementById("btn-export-mentor-pdfs")?.addEventListener("click", () 
     }, index * 180);
   });
 
-  const semesterLabel = (SEMESTER_DEFINITIONS[adminSelectedSemester] || SEMESTER_DEFINITIONS.fall).label;
+  const semesterLabel = getSemesterDefinition(adminSelectedSemester).label;
   const scopeLabel = adminSelectedReportMonth
     ? getMonthGroupDisplayName(adminSelectedReportMonth)
-    : `active ${semesterLabel} months`;
+    : t("activeSemesterMonthsScope", { semester: semesterLabel });
   showToast(
-    "Exporting Session PDFs",
-    `Downloading ${downloadableFiles.length} session PDF(s) from ${scopeLabel}.`,
+    t("toastExportingPdfsTitle"),
+    t("toastExportingPdfsMsg", {
+      count: downloadableFiles.length,
+      scope: scopeLabel
+    }),
     "success"
   );
 });
@@ -5697,7 +5977,7 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
     : getSemesterMonths(inferred.semester, inferred.year).filter(
         (mk) => mk === monthKey || checkedSemesterMonths.includes(mk)
       );
-  const semesterLabel = (SEMESTER_DEFINITIONS[inferred.semester] || SEMESTER_DEFINITIONS.fall).label;
+  const semesterLabel = getSemesterDefinition(inferred.semester).label;
   const agg = getMentorMonthAggregatedData(mentorObj.id, monthKey, adminReportsList);
   const groupName = getMonthGroupDisplayName(monthKey);
 
@@ -5705,7 +5985,13 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
     titleEl.textContent = `📂 ${mentorObj.name} — ${groupName}`;
   }
   if (subEl) {
-    subEl.textContent = `Mentor ID: ${mentorObj.id} · ${semesterLabel} · Monthly Progress: ${agg.filesCount}/${MONTH_MAX_SESSIONS} Files Submitted (${monthKey})`;
+    subEl.textContent = t("reportDetailModalSubDynamic", {
+      id: mentorObj.id,
+      semester: semesterLabel,
+      count: agg.filesCount,
+      max: MONTH_MAX_SESSIONS,
+      month: monthKey
+    });
   }
 
   // Active-months switcher strip inside modal (shows only active checked months for this semester)
@@ -5733,14 +6019,20 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
           <div class="session-file-slot-card empty">
             <div>
               <div class="session-slot-eyebrow" style="color: #94a3b8;">
-                <span>Session ${sessionNumInMonth} of ${MONTH_MAX_SESSIONS} (${escapeHtml(monthKey)})</span>
-                <span>Pending</span>
+                <span>${escapeHtml(
+                  t("sessionOfMaxLabel", {
+                    num: sessionNumInMonth,
+                    max: MONTH_MAX_SESSIONS,
+                    context: monthKey
+                  })
+                )}</span>
+                <span>${escapeHtml(t("statusPending"))}</span>
               </div>
               <div class="session-slot-filename" style="color: #94a3b8; margin-top: 6px;">
-                ⬜ Session ${sessionNumInMonth} — Not yet uploaded
+                ${escapeHtml(t("sessionNotYetUploaded", { num: sessionNumInMonth }))}
               </div>
               <div class="session-slot-meta" style="margin-top: 4px;">
-                Awaiting mentor PDF upload for ${escapeHtml(groupName)}.
+                ${escapeHtml(t("awaitingMentorPdfUpload", { group: groupName }))}
               </div>
             </div>
           </div>
@@ -5749,7 +6041,7 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
 
       const tsFormatted = fileEntry.uploadedAt
         ? fileEntry.uploadedAt.slice(0, 19).replace("T", " ")
-        : "Recorded";
+        : t("recentlyLabel");
       const sizeStr = formatFileSizeShort(fileEntry.size);
       const hasData = Boolean(fileEntry.dataUrl);
 
@@ -5757,15 +6049,37 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
         <div class="session-file-slot-card uploaded">
           <div>
             <div class="session-slot-eyebrow">
-              <span>Session ${sessionNumInMonth} of ${MONTH_MAX_SESSIONS} (${escapeHtml(groupName)})</span>
-              <span class="status-pill-badge approved" style="font-size: 10.5px; padding: 2px 7px;">Uploaded (${sessionNumInMonth}/${MONTH_MAX_SESSIONS})</span>
+              <span>${escapeHtml(
+                t("sessionOfMaxLabel", {
+                  num: sessionNumInMonth,
+                  max: MONTH_MAX_SESSIONS,
+                  context: groupName
+                })
+              )}</span>
+              <span class="status-pill-badge approved" style="font-size: 10.5px; padding: 2px 7px;">${escapeHtml(
+                t("uploadedCountBadge", {
+                  num: sessionNumInMonth,
+                  max: MONTH_MAX_SESSIONS
+                })
+              )}</span>
             </div>
             <div class="session-slot-filename" style="margin-top: 6px;">
-              📄 Session ${sessionNumInMonth} - ${escapeHtml(fileEntry.name)}
+              📄 ${escapeHtml(
+                t("sessionFileLabel", {
+                  num: sessionNumInMonth,
+                  name: fileEntry.name
+                })
+              )}
             </div>
             <div class="session-slot-meta" style="margin-top: 5px;">
-              <div><strong>Submitted:</strong> ${escapeHtml(tsFormatted)}</div>
-              ${sizeStr ? `<div><strong>Size:</strong> ${escapeHtml(sizeStr)} · Permanently Stored</div>` : `<div>Permanently Stored</div>`}
+              <div><strong>${escapeHtml(t("submittedTimestampLabel"))}</strong> ${escapeHtml(tsFormatted)}</div>
+              ${
+                sizeStr
+                  ? `<div><strong>${escapeHtml(t("sizeLabel"))}</strong> ${escapeHtml(sizeStr)} · ${escapeHtml(
+                      t("permanentlyStoredLabel")
+                    )}</div>`
+                  : `<div>${escapeHtml(t("permanentlyStoredLabel"))}</div>`
+              }
             </div>
           </div>
           <div class="session-slot-actions">
@@ -5776,7 +6090,7 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
               data-preview-slot="${slotIdx}"
               ${hasData ? "" : "disabled"}
             >
-              👁️ View PDF
+              ${escapeHtml(t("btnViewPdf"))}
             </button>
             ${
               hasData
@@ -5786,7 +6100,7 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
                     class="btn-secondary-action"
                     style="padding: 6px 12px; font-size: 12px; text-decoration: none;"
                   >
-                    ⤓ Download
+                    ${escapeHtml(t("btnDownloadShort"))}
                   </a>`
                 : ""
             }
@@ -5798,10 +6112,12 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
 
   const submissionStatusBadge =
     agg.status === "reviewed"
-      ? `<span class="status-pill-badge approved">✓ Reviewed by Admin</span>`
+      ? `<span class="status-pill-badge approved">${escapeHtml(t("reviewedByAdminBadge"))}</span>`
       : agg.status === "pending"
-      ? `<span class="status-pill-badge pending">• Submitted — Pending Review</span>`
-      : `<span class="status-pill-badge" style="background: #f1f5f9; color: #64748b;">No Upload Yet for ${escapeHtml(monthKey)}</span>`;
+      ? `<span class="status-pill-badge pending">${escapeHtml(t("submittedPendingReviewBadge"))}</span>`
+      : `<span class="status-pill-badge" style="background: #f1f5f9; color: #64748b;">${escapeHtml(
+          t("noUploadYetForMonthBadge", { month: monthKey })
+        )}</span>`;
 
   const latestTsDisplay = agg.latestSubmissionAt
     ? agg.latestSubmissionAt.slice(0, 19).replace("T", " ")
@@ -5816,14 +6132,18 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
     </div>
 
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 12.5px;">
-      <div><strong>Mentor:</strong> ${escapeHtml(mentorObj.name)} (ID: ${escapeHtml(mentorObj.id)})</div>
-      <div><strong>Selected Month:</strong> ${escapeHtml(groupName)} (${escapeHtml(semesterLabel)} · ${escapeHtml(monthKey)})</div>
-      <div><strong>Monthly Progress:</strong> ${agg.filesCount}/${MONTH_MAX_SESSIONS} Files Submitted</div>
-      <div><strong>Exact Submission Timestamp:</strong> ${escapeHtml(latestTsDisplay)}</div>
+      <div><strong>${escapeHtml(t("mentorLabelStrong"))}</strong> ${escapeHtml(mentorObj.name)} (${escapeHtml(
+        t("idLabel", { id: mentorObj.id })
+      )})</div>
+      <div><strong>${escapeHtml(t("selectedMonthLabelStrong"))}</strong> ${escapeHtml(groupName)} (${escapeHtml(semesterLabel)} · ${escapeHtml(monthKey)})</div>
+      <div><strong>${escapeHtml(t("monthlyProgressLabelStrong"))}</strong> ${escapeHtml(
+        t("filesSubmittedCount", { count: agg.filesCount, max: MONTH_MAX_SESSIONS })
+      )}</div>
+      <div><strong>${escapeHtml(t("exactSubmissionTimestampLabel"))}</strong> ${escapeHtml(latestTsDisplay)}</div>
     </div>
 
     <strong style="font-size: 13px; color: #0f172a; display: block; margin-bottom: 8px;">
-      📎 ${escapeHtml(groupName)} — 2 Monthly Session PDFs:
+      ${escapeHtml(t("twoMonthlySessionPdfsHeading", { group: groupName }))}
     </strong>
     <div class="session-files-grid">
       ${slotsHtml}
@@ -5835,7 +6155,7 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
     ${
       agg.notesText
         ? `<div style="margin-bottom: 12px;">
-            <strong style="font-size: 12.5px; color: #0f172a;">Mentor Activity Summary &amp; Notes:</strong>
+            <strong style="font-size: 12.5px; color: #0f172a;">${escapeHtml(t("mentorActivitySummaryHeading"))}</strong>
             <p style="background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; margin: 5px 0 0; white-space: pre-wrap;">${escapeHtml(agg.notesText)}</p>
           </div>`
         : ""
@@ -5844,7 +6164,7 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
     ${
       agg.concernsText
         ? `<div style="margin-bottom: 12px;">
-            <strong style="font-size: 12.5px; color: #b45309;">Student Concerns / Difficulties:</strong>
+            <strong style="font-size: 12.5px; color: #b45309;">${escapeHtml(t("studentConcernsDifficultiesHeading"))}</strong>
             <p style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; margin: 5px 0 0; white-space: pre-wrap;">${escapeHtml(agg.concernsText)}</p>
           </div>`
         : ""
@@ -5853,8 +6173,12 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
     ${
       agg.reports.length > 0
         ? `<div style="margin-top: 10px;">
-            <label style="font-size: 12.5px; font-weight: 700; color: #334155; display: block; margin-bottom: 6px;">International Office (Admin) Remarks for ${escapeHtml(groupName)}:</label>
-            <textarea id="admin-report-remarks-input" class="auth-input" rows="2" placeholder="Write feedback or approval notes for ${escapeHtml(mentorObj.name)}...">${escapeHtml(agg.adminRemarks || "")}</textarea>
+            <label style="font-size: 12.5px; font-weight: 700; color: #334155; display: block; margin-bottom: 6px;">${escapeHtml(
+              t("adminRemarksForGroupLabel", { group: groupName })
+            )}</label>
+            <textarea id="admin-report-remarks-input" class="auth-input" rows="2" placeholder="${escapeHtml(
+              t("adminRemarksPlaceholder", { name: mentorObj.name })
+            )}">${escapeHtml(agg.adminRemarks || "")}</textarea>
           </div>`
         : ""
     }
@@ -5863,11 +6187,15 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
   footer.innerHTML = `
     ${
       agg.reports.length > 0
-        ? `<button type="button" class="btn-primary-action" id="btn-approve-report">✅ Save Remarks &amp; Mark Reviewed</button>`
+        ? `<button type="button" class="btn-primary-action" id="btn-approve-report">${escapeHtml(
+            t("btnSaveRemarksMarkReviewed")
+          )}</button>`
         : ""
     }
-    <button type="button" class="btn-secondary-action" id="btn-chat-report-mentor">💬 Message Mentor</button>
-    <button type="button" class="modal-btn" id="btn-close-report-detail">Close</button>
+    <button type="button" class="btn-secondary-action" id="btn-chat-report-mentor">${escapeHtml(
+      t("btnMessageMentor")
+    )}</button>
+    <button type="button" class="modal-btn" id="btn-close-report-detail">${escapeHtml(t("closeBtn"))}</button>
   `;
 
   modal.style.display = "flex";
@@ -5899,13 +6227,21 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
         viewerContainer.innerHTML = `
           <div class="inline-pdf-preview-box">
             <div class="inline-pdf-preview-header">
-              <span>📄 Session ${idx + 1} - ${escapeHtml(fileEntry.name)}</span>
+              <span>📄 ${escapeHtml(
+                t("sessionFileLabel", { num: idx + 1, name: fileEntry.name })
+              )}</span>
               <div style="display: flex; align-items: center; gap: 8px;">
-                <a href="${blobUrl}" target="_blank" rel="noopener" class="btn-table-action" style="padding: 3px 10px; font-size: 11.5px; text-decoration: none; background: #fff; color: #0f172a;">↗ Open Full Tab</a>
-                <button type="button" id="btn-close-inline-pdf" class="btn-table-action" style="padding: 3px 8px; font-size: 11.5px; background: #334155; color: #fff; border-color: #475569;">✕ Hide Preview</button>
+                <a href="${blobUrl}" target="_blank" rel="noopener" class="btn-table-action" style="padding: 3px 10px; font-size: 11.5px; text-decoration: none; background: #fff; color: #0f172a;">${escapeHtml(
+                  t("btnOpenFullTab")
+                )}</a>
+                <button type="button" id="btn-close-inline-pdf" class="btn-table-action" style="padding: 3px 8px; font-size: 11.5px; background: #334155; color: #fff; border-color: #475569;">${escapeHtml(
+                  t("btnHidePreview")
+                )}</button>
               </div>
             </div>
-            <iframe src="${blobUrl}" style="width: 100%; height: 420px; border: none; background: #fff;" title="Session PDF Preview"></iframe>
+            <iframe src="${blobUrl}" style="width: 100%; height: 420px; border: none; background: #fff;" title="${escapeHtml(
+              t("sessionPdfPreviewTitle")
+            )}"></iframe>
           </div>
         `;
         viewerContainer.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -5924,7 +6260,7 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
   });
   document.getElementById("btn-chat-report-mentor")?.addEventListener("click", () => {
     modal.style.display = "none";
-    openChatModal(mentorObj.id, mentorObj.name, "Mentor");
+    openChatModal(mentorObj.id, mentorObj.name, t("mentorRoleLabelShort"));
   });
   document.getElementById("btn-approve-report")?.addEventListener("click", async () => {
     const remarks = (document.getElementById("admin-report-remarks-input")?.value || "").trim();
@@ -5947,7 +6283,14 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
         }
         await loadAdminDashboard();
         await openMentorMonthSubmissionModal(mentorObj.id, monthKey);
-        showToast("Month Submission Reviewed", `Saved remarks for ${mentorObj.name} (${groupName}).`, "success");
+        showToast(
+          t("toastMonthSubmissionReviewedTitle"),
+          t("toastMonthSubmissionReviewedMsg", {
+            name: mentorObj.name,
+            group: groupName
+          }),
+          "success"
+        );
       } catch (_) {}
     };
     await performReportApprove();
@@ -5977,9 +6320,16 @@ function updateAdminDeadlinePreviewUI(rawDeadlineValue, rawCustomMessage) {
       : document.getElementById("admin-arc-custom-message-input")?.value;
 
   const info = computeArcDeadlineInfo(deadlineVal, customMsgVal);
+  const dueBadgePreview =
+    info.daysRemaining === 1
+      ? t("arcPillDueOneDay", { due: info.formattedDue })
+      : t("arcPillDueDays", { due: info.formattedDue, days: info.daysRemaining });
+
   previewEl.innerHTML = `
-    <div style="margin-bottom: 4px; color: #64748b; font-weight: 600;">Checklist Due Badge: <strong style="color: #1d4ed8;">📅 Due: ${escapeHtml(info.formattedDue)} (${info.daysRemaining} ${info.daysRemaining === 1 ? "day" : "days"} left)</strong></div>
-    <div>Student Urgent Banner: <strong>"${escapeHtml(info.personalizedMessage)}"</strong></div>
+    <div style="margin-bottom: 4px; color: #64748b; font-weight: 600;">${escapeHtml(
+      t("checklistDueBadgePreviewLabel")
+    )} <strong style="color: #1d4ed8;">${escapeHtml(dueBadgePreview)}</strong></div>
+    <div>${escapeHtml(t("studentUrgentBannerPreviewLabel"))} <strong>"${escapeHtml(info.personalizedMessage)}"</strong></div>
   `;
 }
 
@@ -5989,7 +6339,7 @@ function renderAdminSettingsPanel() {
   const savedTemplate =
     portalConfigCache?.arcCustomMessage && String(portalConfigCache.arcCustomMessage).trim()
       ? String(portalConfigCache.arcCustomMessage)
-      : DEFAULT_ARC_BANNER_TEMPLATE;
+      : t("defaultStudentArcUrgentText");
   const info = computeArcDeadlineInfo(portalConfigCache?.arcDeadline, savedTemplate);
 
   if (deadlineInput && document.activeElement !== deadlineInput) {
@@ -6033,9 +6383,9 @@ document.querySelectorAll("[data-insert-arc-token]").forEach((btn) => {
 document.getElementById("btn-reset-arc-message-template")?.addEventListener("click", () => {
   const msgInput = document.getElementById("admin-arc-custom-message-input");
   if (!msgInput) return;
-  msgInput.value = DEFAULT_ARC_BANNER_TEMPLATE;
+  msgInput.value = t("defaultStudentArcUrgentText");
   updateAdminDeadlinePreviewUI(undefined, msgInput.value);
-  showToast("Default Message Restored", "Click 'Save ARC Deadline' to publish changes.", "info");
+  showToast(t("toastDefaultMsgRestoredTitle"), t("toastDefaultMsgRestoredMsg"), "info");
 });
 
 document.querySelectorAll("[data-deadline-preset]").forEach((btn) => {
@@ -6057,11 +6407,11 @@ document.getElementById("btn-save-arc-deadline")?.addEventListener("click", asyn
   const msgInput = document.getElementById("admin-arc-custom-message-input");
   const rawVal = (input?.value || "").trim();
   if (!rawVal || Number.isNaN(new Date(rawVal).getTime())) {
-    showToast("Invalid Date/Time", "Please pick a valid ARC submission due date and time.", "error");
+    showToast(t("toastInvalidDateTimeTitle"), t("toastInvalidDateTimeMsg"), "error");
     return;
   }
 
-  const rawCustomMsg = (msgInput?.value || "").trim() || DEFAULT_ARC_BANNER_TEMPLATE;
+  const rawCustomMsg = (msgInput?.value || "").trim() || t("defaultStudentArcUrgentText");
 
   const performSaveArcDeadline = async () => {
     const saveBtn = document.getElementById("btn-save-arc-deadline");
@@ -6077,8 +6427,11 @@ document.getElementById("btn-save-arc-deadline")?.addEventListener("click", asyn
       const info = computeArcDeadlineInfo(rawVal, rawCustomMsg);
       renderAdminAll();
       showToast(
-        "ARC Settings Saved",
-        `Due: ${info.formattedDue} (${info.daysRemaining}d left). Custom banner text & deadline updated.`,
+        t("toastArcSettingsSavedTitle"),
+        t("toastArcSettingsSavedMsg", {
+          due: info.formattedDue,
+          days: info.daysRemaining
+        }),
         "success"
       );
     } catch (_) {
@@ -6119,10 +6472,10 @@ document.getElementById("admin-announcement-form")?.addEventListener("submit", a
       document.getElementById("admin-announcement-form")?.reset();
       await loadAdminDashboard();
       showToast(
-        "Announcement Posted",
+        t("toastAnnouncementPostedTitle"),
         category === "Immigration"
-          ? "Immigration / ARC notice posted exclusively to Students (hidden from Mentors)."
-          : "Students and mentors can now see this notice.",
+          ? t("toastAnnouncementPostedImmMsg")
+          : t("toastAnnouncementPostedGenMsg"),
         "success"
       );
     } catch (_) {}
@@ -6136,7 +6489,9 @@ function renderAdminAnnouncements() {
   if (!listEl) return;
 
   if (adminAnnouncementsList.length === 0) {
-    listEl.innerHTML = `<div style="text-align: center; padding: 14px; color: #94a3b8; font-size: 13px;">0 active announcements.</div>`;
+    listEl.innerHTML = `<div style="text-align: center; padding: 14px; color: #94a3b8; font-size: 13px;">${escapeHtml(
+      t("zeroActiveAnnouncements")
+    )}</div>`;
     return;
   }
 
@@ -6144,10 +6499,10 @@ function renderAdminAnnouncements() {
     .map((a) => {
       const catBadge =
         a.category === "Urgent"
-          ? `<span class="status-pill-badge rejected">🚨 Urgent</span>`
+          ? `<span class="status-pill-badge rejected">${escapeHtml(t("catUrgentBadge"))}</span>`
           : a.category === "Immigration"
-          ? `<span class="status-pill-badge pending">🪪 Immigration (Students Only)</span>`
-          : `<span class="status-pill-badge approved">📌 General</span>`;
+          ? `<span class="status-pill-badge pending">${escapeHtml(t("catImmigrationBadge"))}</span>`
+          : `<span class="status-pill-badge approved">${escapeHtml(t("catGeneralBadge"))}</span>`;
       return `
         <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc;">
           <div>
@@ -6171,7 +6526,7 @@ function renderAdminAnnouncements() {
         try {
           await dbDeleteDoc("announcements", id, { onRetry: performDeleteAnn });
           await loadAdminDashboard();
-          showToast("Announcement Removed", "", "info");
+          showToast(t("toastAnnouncementRemovedTitle"), "", "info");
         } catch (_) {}
       };
       await performDeleteAnn();
@@ -6191,10 +6546,10 @@ async function renderAnnouncementsForStudentAndMentor() {
   const stuList = document.getElementById("student-announcements-list");
   if (stuList) {
     if (allAnn.length === 0) {
-      if (stuSub) stuSub.textContent = "No announcements posted yet.";
+      if (stuSub) stuSub.textContent = t("noAnnouncementsPosted");
       stuList.innerHTML = "";
     } else {
-      if (stuSub) stuSub.textContent = `${allAnn.length} official update(s)`;
+      if (stuSub) stuSub.textContent = t("officialUpdatesCount", { count: allAnn.length });
       stuList.innerHTML = allAnn
         .slice(0, 4)
         .map(
@@ -6275,12 +6630,14 @@ function openDocumentModal({ studentId, studentName, taskId, docInfo, viewerRole
     previewEl.innerHTML = `
       <div style="padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
         <p style="margin: 0 0 10px; font-weight: 600;">📄 ${escapeHtml(docInfo.fileName || "Document.pdf")}</p>
-        <a href="${docInfo.dataUrl}" download="${escapeHtml(docInfo.fileName || "proof.pdf")}" class="btn-primary-action" style="display: inline-block; text-decoration: none;">⤓ Download / Open PDF</a>
+        <a href="${docInfo.dataUrl}" download="${escapeHtml(docInfo.fileName || "proof.pdf")}" class="btn-primary-action" style="display: inline-block; text-decoration: none;">${escapeHtml(
+          t("btnDownloadOpenPdf")
+        )}</a>
       </div>
     `;
   } else {
     previewEl.innerHTML = `
-      <img src="${docInfo.dataUrl}" alt="Uploaded Proof" style="max-width: 100%; max-height: 280px; border-radius: 8px; border: 1px solid #e2e8f0;" />
+      <img src="${docInfo.dataUrl}" alt="${escapeHtml(t("docModalTitle"))}" style="max-width: 100%; max-height: 280px; border-radius: 8px; border: 1px solid #e2e8f0;" />
     `;
   }
 
@@ -6305,9 +6662,11 @@ function openDocumentModal({ studentId, studentName, taskId, docInfo, viewerRole
 
   if (canVerify) {
     actionsEl.innerHTML = `
-      <button type="button" class="btn-primary-action" id="btn-doc-approve" style="background: #16a34a;">✓ Approve</button>
-      <button type="button" class="modal-btn danger" id="btn-doc-reject">✕ Reject</button>
-      <button type="button" class="modal-btn" id="btn-doc-close-dyn">Close</button>
+      <button type="button" class="btn-primary-action" id="btn-doc-approve" style="background: #16a34a;">${escapeHtml(
+        t("btnApproveShort")
+      )}</button>
+      <button type="button" class="modal-btn danger" id="btn-doc-reject">${escapeHtml(t("btnRejectShort"))}</button>
+      <button type="button" class="modal-btn" id="btn-doc-close-dyn">${escapeHtml(t("closeBtn"))}</button>
     `;
     document.getElementById("btn-doc-approve")?.addEventListener("click", async () => {
       const note = (reviewerInput?.value || "").trim();
@@ -6315,14 +6674,16 @@ function openDocumentModal({ studentId, studentName, taskId, docInfo, viewerRole
       await updateDocumentReviewStatus(studentId, taskId, "approved", note);
     });
     document.getElementById("btn-doc-reject")?.addEventListener("click", async () => {
-      const note = (reviewerInput?.value || "").trim() || "Please re-upload a clearer document.";
+      const note = (reviewerInput?.value || "").trim() || t("defaultRejectNote");
       modal.style.display = "none";
       await updateDocumentReviewStatus(studentId, taskId, "rejected", note);
     });
   } else if (viewerRole === "student") {
     actionsEl.innerHTML = `
-      <button type="button" class="btn-secondary-action" id="btn-doc-replace">⇪ Replace Document</button>
-      <button type="button" class="modal-btn" id="btn-doc-close-dyn">Close</button>
+      <button type="button" class="btn-secondary-action" id="btn-doc-replace">${escapeHtml(
+        t("btnReplaceDocument")
+      )}</button>
+      <button type="button" class="modal-btn" id="btn-doc-close-dyn">${escapeHtml(t("closeBtn"))}</button>
     `;
     document.getElementById("btn-doc-replace")?.addEventListener("click", () => {
       modal.style.display = "none";
@@ -6330,7 +6691,9 @@ function openDocumentModal({ studentId, studentName, taskId, docInfo, viewerRole
       document.getElementById("task-doc-input")?.click();
     });
   } else {
-    actionsEl.innerHTML = `<button type="button" class="modal-btn" id="btn-doc-close-dyn">Close</button>`;
+    actionsEl.innerHTML = `<button type="button" class="modal-btn" id="btn-doc-close-dyn">${escapeHtml(
+      t("closeBtn")
+    )}</button>`;
   }
 
   document.getElementById("btn-doc-close-dyn")?.addEventListener("click", () => {
@@ -6376,8 +6739,11 @@ async function updateDocumentReviewStatus(studentId, taskId, newStatus, note) {
       );
 
       showToast(
-        newStatus === "approved" ? "Document Approved" : "Document Rejected",
-        `Updated ${getTaskLabel(taskId)} for ${studentId}.`,
+        newStatus === "approved" ? t("toastDocApprovedTitle") : t("toastDocRejectedTitle"),
+        t("toastDocStatusUpdatedMsg", {
+          task: getTaskLabel(taskId),
+          id: studentId
+        }),
         newStatus === "approved" ? "success" : "warning"
       );
 
@@ -6485,7 +6851,7 @@ async function requestUrgentPushPermission(interactive = false) {
     const result = await window.Notification.requestPermission();
     syncPushPermissionBannerUI();
     if (interactive && result === "granted") {
-      showToast("Push Alerts Enabled", "Browser & OS push alerts are active for urgent deadlines.", "success");
+      showToast(t("toastPushAlertsEnabledTitle"), t("toastPushAlertsEnabledMsg"), "success");
     }
     return result;
   } catch (_) {
@@ -6588,13 +6954,13 @@ async function collectActiveUrgentAlertsForCurrentUser() {
             id: alertId,
             warningDocId: matchedWarnDoc?._id || `${alertId}__${myIdLower}`,
             kind: "student_arc",
-            title: "Urgent ARC Application & Deadline Notice",
-            sender: "International Office (Admin)",
+            title: t("urgentArcAlertTitle"),
+            sender: t("internationalOfficeSender"),
             message: arcWarn.customMessage || dlInfo.personalizedMessage,
-            meta: `Official Deadline: ${dlInfo.formattedDue} · Upload your Alien Registration Card (ARC) proof immediately.`,
-            pushBody: `${dlInfo.personalizedMessage} (Due: ${dlInfo.formattedDue})`,
+            meta: t("urgentArcAlertMeta", { due: dlInfo.formattedDue }),
+            pushBody: `${dlInfo.personalizedMessage} (${dlInfo.formattedDue})`,
             sentAt: arcWarn.lastSentAt || cfg?.updatedAt || "",
-            ctaLabel: "⇪ Acknowledge & Upload ARC Proof",
+            ctaLabel: t("urgentArcAlertCta"),
             isAcknowledged: ackSet.has(alertId) || configAck
           });
         }
@@ -6615,7 +6981,7 @@ async function collectActiveUrgentAlertsForCurrentUser() {
       const filesCount = getMentorMonthAggregatedData(currentUserId, mKey, myReports).filesCount;
       if (filesCount >= MONTH_MAX_SESSIONS) return;
 
-      const monthLabel = wObj.monthLabel || getMonthGroupDisplayName(mKey);
+      const monthLabel = getMonthGroupDisplayName(mKey);
       const alertId = wObj.id || `mentor_warn_${mKey}_${wObj.sentAt || "active"}`;
       const matchedWarnDoc =
         warningDocByBatch.get(alertId) ||
@@ -6625,20 +6991,25 @@ async function collectActiveUrgentAlertsForCurrentUser() {
         (Array.isArray(wObj.acknowledgedBy)
           ? wObj.acknowledgedBy.some((u) => String(u).toLowerCase() === myIdLower)
           : false);
-      const msg = wObj.message || DEFAULT_MENTOR_REPORT_WARNING_MESSAGE;
+      const msg = wObj.message || t("defaultMentorReportWarningMsg");
 
       alerts.push({
         id: alertId,
         warningDocId: matchedWarnDoc?._id || `${alertId}__${myIdLower}`,
         kind: "mentor_report",
         monthKey: mKey,
-        title: `Critical Monthly Report Unsubmitted (${monthLabel})`,
-        sender: "International Office (Admin)",
+        title: t("urgentMentorAlertTitle", { month: monthLabel }),
+        sender: t("internationalOfficeSender"),
         message: msg,
-        meta: `${monthLabel} (${mKey}) · Current progress: ${filesCount}/${MONTH_MAX_SESSIONS} Session PDFs Submitted`,
-        pushBody: `${msg} — ${monthLabel} (${filesCount}/${MONTH_MAX_SESSIONS} PDFs submitted)`,
+        meta: t("urgentMentorAlertMeta", {
+          monthLabel,
+          monthKey: mKey,
+          count: filesCount,
+          max: MONTH_MAX_SESSIONS
+        }),
+        pushBody: `${msg} — ${monthLabel} (${filesCount}/${MONTH_MAX_SESSIONS})`,
         sentAt: wObj.sentAt || cfg?.updatedAt || "",
-        ctaLabel: "+ Acknowledge & Submit Report",
+        ctaLabel: t("urgentMentorAlertCta"),
         isAcknowledged: ackSet.has(alertId) || configAck
       });
     });
@@ -6696,13 +7067,15 @@ function renderUrgentBlockingModalFromQueue() {
   if (queueBadge) {
     if (activeUrgentAlertQueue.length > 1) {
       queueBadge.style.display = "inline-block";
-      queueBadge.textContent = `1 of ${activeUrgentAlertQueue.length} Urgent`;
+      queueBadge.textContent = t("urgentQueueCountBadge", {
+        count: activeUrgentAlertQueue.length
+      });
     } else {
       queueBadge.style.display = "none";
     }
   }
   if (titleEl) titleEl.textContent = nextAlert.title;
-  if (senderEl) senderEl.textContent = `Issued by ${nextAlert.sender}`;
+  if (senderEl) senderEl.textContent = t("issuedBySender", { sender: nextAlert.sender });
   if (msgEl) msgEl.textContent = nextAlert.message;
   if (metaEl) metaEl.textContent = nextAlert.meta;
 
@@ -6733,7 +7106,7 @@ document.getElementById("btn-acknowledge-urgent-alert")?.addEventListener("click
       activeUrgentAlertQueue = activeUrgentAlertQueue.filter((a) => a.id !== acked.id);
       renderUrgentBlockingModalFromQueue();
       await renderUrgentAlertsBellDropdown();
-      showToast("Alert Acknowledged", "Urgent institutional notice marked as read.", "info");
+      showToast(t("toastAlertAcknowledgedTitle"), t("toastAlertAcknowledgedMsg"), "info");
     } catch (_) {}
   };
   await performAck();
@@ -6774,8 +7147,8 @@ async function renderUrgentAlertsBellDropdown() {
     if (listEl) {
       listEl.innerHTML =
         currentRole === "admin"
-          ? `<div class="notif-empty-state">System A urgent alerts dispatched by Admin appear as blocking popups &amp; OS push alerts on targeted Student and Mentor screens.</div>`
-          : `<div class="notif-empty-state">No active urgent alerts.</div>`;
+          ? `<div class="notif-empty-state">${escapeHtml(t("adminUrgentBellNote"))}</div>`
+          : `<div class="notif-empty-state">${escapeHtml(t("noActiveUrgentAlerts"))}</div>`;
     }
     return [];
   }
@@ -6795,11 +7168,11 @@ async function renderUrgentAlertsBellDropdown() {
 
   if (listEl) {
     if (allUrgent.length === 0) {
-      listEl.innerHTML = `<div class="notif-empty-state">No active urgent institutional alerts.</div>`;
+      listEl.innerHTML = `<div class="notif-empty-state">${escapeHtml(t("noActiveUrgentInstitutionalAlerts"))}</div>`;
     } else {
       listEl.innerHTML = allUrgent
         .map((item) => {
-          const timeStr = item.sentAt ? item.sentAt.slice(5, 16).replace("T", " ") : "Active";
+          const timeStr = item.sentAt ? item.sentAt.slice(5, 16).replace("T", " ") : t("activeTimeLabel");
           return `
             <div class="notif-item-row ${!item.isAcknowledged ? "unread" : ""}" data-urgent-alert-id="${escapeHtml(item.id)}">
               <div class="notif-avatar-circle" style="background: #fee2e2; color: #b91c1c;">🚨</div>
@@ -6810,7 +7183,7 @@ async function renderUrgentAlertsBellDropdown() {
                 </div>
                 <p class="notif-msg-preview">${escapeHtml(item.message)}</p>
                 <span style="font-size: 11px; color: ${item.isAcknowledged ? "#16a34a" : "#b91c1c"}; font-weight: 700;">
-                  ${item.isAcknowledged ? "✓ Acknowledged" : "• Requires Acknowledgment"}
+                  ${escapeHtml(item.isAcknowledged ? t("acknowledgedStatusText") : t("requiresAcknowledgmentText"))}
                 </span>
               </div>
             </div>
@@ -6879,7 +7252,7 @@ document.getElementById("btn-mark-all-read")?.addEventListener("click", async (e
       activeUrgentAlertQueue = [];
       renderUrgentBlockingModalFromQueue();
       await renderUrgentAlertsBellDropdown();
-      showToast("Urgent Alerts Acknowledged", "All urgent system warnings marked as read.", "info");
+      showToast(t("toastAllUrgentAlertsAckTitle"), t("toastAllUrgentAlertsAckMsg"), "info");
     } catch (_) {}
   };
   await performMarkAllAck();
@@ -6901,7 +7274,7 @@ document.addEventListener("click", (e) => {
 //   - Mentor  -> Assigned Students + Admin ONLY
 //   - Admin   -> Mentors ONLY (Students blocked; Admin->Student is Urgent Warnings only)
 // ============================================================
-let activeChatRecipientRoleLabel = "Direct Message";
+let activeChatRecipientRoleLabel = "";
 let cachedMessengerThreads = [];
 
 function syncMessengerRoleChromeAndComposer(hasAuthorizedTarget = false) {
@@ -6915,47 +7288,47 @@ function syncMessengerRoleChromeAndComposer(hasAuthorizedTarget = false) {
 
   if (scopeEl) {
     if (currentRole === "student") {
-      scopeEl.textContent = "1:1 direct chat with your Assigned Mentor";
+      scopeEl.textContent = t("messengerScopeStudent");
     } else if (currentRole === "mentor") {
-      scopeEl.textContent = "Assigned Mentees & International Office";
+      scopeEl.textContent = t("messengerScopeMentor");
     } else if (currentRole === "admin") {
-      scopeEl.textContent = "Direct Messenger with Mentors";
+      scopeEl.textContent = t("messengerScopeAdmin");
     } else {
-      scopeEl.textContent = "Direct conversations";
+      scopeEl.textContent = t("messengerScopeFallback");
     }
   }
 
   if (searchInput) {
     if (currentRole === "student") {
-      searchInput.placeholder = "Search mentor messages...";
+      searchInput.placeholder = t("searchMentorMessagesPlaceholder");
     } else if (currentRole === "admin") {
-      searchInput.placeholder = "Search mentors...";
+      searchInput.placeholder = t("searchMentorsPlaceholder");
     } else {
-      searchInput.placeholder = "Search mentees or Admin...";
+      searchInput.placeholder = t("searchMenteesOrAdminPlaceholder");
     }
   }
 
   if (textInput) {
     textInput.disabled = !hasAuthorizedTarget;
     textInput.placeholder = hasAuthorizedTarget
-      ? "Write a message..."
+      ? t("writeMessagePlaceholder")
       : currentRole === "student"
-        ? "Waiting for mentor assignment..."
-        : "Select an authorized conversation to message...";
+        ? t("waitingMentorPlaceholder")
+        : t("selectAuthorizedChatPlaceholder");
   }
   if (sendBtn) {
     sendBtn.disabled = !hasAuthorizedTarget;
   }
 
   if (!hasAuthorizedTarget) {
-    if (titleEl) titleEl.textContent = "Select a conversation";
+    if (titleEl) titleEl.textContent = t("selectConversationHeading");
     if (roleEl) {
       roleEl.textContent =
         currentRole === "student"
-          ? "Assigned Mentor Chat"
+          ? t("assignedMentorChatRole")
           : currentRole === "admin"
-            ? "Mentor Directory Chat"
-            : "Direct Message";
+            ? t("mentorDirectoryChatRole")
+            : t("directMessageRole");
     }
     if (avatarEl) avatarEl.textContent = "💬";
   }
@@ -6999,7 +7372,7 @@ async function buildMessengerThreadsForCurrentUser() {
         contactId: id,
         contactKey: key,
         contactName: name || id,
-        roleTag: roleTag || "Direct Message",
+        roleTag: roleTag || t("directMessageRole"),
         channelId: getChatChannelId(myKey, key),
         lastMessageText: "",
         lastSenderKey: "",
@@ -7016,12 +7389,16 @@ async function buildMessengerThreadsForCurrentUser() {
     if (currentStudentMentorId) {
       const mDoc = rosterById.get(String(currentStudentMentorId).toLowerCase());
       if (mDoc && mDoc.role !== "student") {
-        ensureContact(currentStudentMentorId, mDoc.name || currentStudentMentorId, "Assigned Mentor");
+        ensureContact(
+          currentStudentMentorId,
+          mDoc.name || currentStudentMentorId,
+          t("assignedMentorRole")
+        );
       }
     }
   } else if (currentRole === "mentor") {
     // Mentor sees Admin + their Assigned Students ONLY
-    ensureContact("admin", "International Office (Admin)", "Admin Support");
+    ensureContact("admin", t("internationalOfficeSender"), t("adminSupportRole"));
     allRoster
       .filter(
         (r) =>
@@ -7029,13 +7406,13 @@ async function buildMessengerThreadsForCurrentUser() {
           cleanMentorRefValue(r.mentorId).toLowerCase() === String(currentUserId || "").trim().toLowerCase()
       )
       .forEach((stu) => {
-        ensureContact(stu._id, stu.name || stu._id, "Assigned Mentee");
+        ensureContact(stu._id, stu.name || stu._id, t("assignedMenteeRole"));
       });
   } else if (currentRole === "admin") {
     // Admin sees Mentors ONLY — NEVER Students!
     allRoster
       .filter((r) => r.role === "mentor")
-      .forEach((m) => ensureContact(m._id, m.name || m._id, "Mentor"));
+      .forEach((m) => ensureContact(m._id, m.name || m._id, t("mentorRoleLabelShort")));
   }
 
   // Merge chronological chat history & unread counts ONLY for authorized channels
@@ -7064,17 +7441,17 @@ async function buildMessengerThreadsForCurrentUser() {
     const rPerson = rosterById.get(otherKey);
     const inferredRole =
       otherKey === "admin"
-        ? "Admin Support"
+        ? t("adminSupportRole")
         : rPerson?.role === "mentor"
           ? currentRole === "student"
-            ? "Assigned Mentor"
-            : "Mentor"
+            ? t("assignedMentorRole")
+            : t("mentorRoleLabelShort")
           : rPerson?.role === "student"
-            ? "Assigned Mentee"
-            : "Direct Message";
+            ? t("assignedMenteeRole")
+            : t("directMessageRole");
 
     let inferredName =
-      otherKey === "admin" ? "International Office (Admin)" : rPerson?.name || otherKey;
+      otherKey === "admin" ? t("internationalOfficeSender") : rPerson?.name || otherKey;
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
       if (String(m.senderId || "").toLowerCase() === otherKey && m.senderName) {
@@ -7156,10 +7533,10 @@ async function renderMessengerThreadsList() {
   if (threads.length === 0) {
     const emptyMsg =
       currentRole === "student"
-        ? "Your mentor has not been assigned yet. Direct chat with your mentor unlocks once assigned."
+        ? t("emptyThreadsStudentUnassigned")
         : currentRole === "admin"
-          ? "No mentors registered yet. Add mentors in the People directory to message them."
-          : "No conversations available yet.";
+          ? t("emptyThreadsAdminNoMentors")
+          : t("emptyThreadsDefault");
     listEl.innerHTML = `<div class="messenger-empty-threads">${escapeHtml(emptyMsg)}</div>`;
     return;
   }
@@ -7175,7 +7552,7 @@ async function renderMessengerThreadsList() {
   });
 
   if (filtered.length === 0) {
-    listEl.innerHTML = `<div class="messenger-empty-threads">No matching conversations found.</div>`;
+    listEl.innerHTML = `<div class="messenger-empty-threads">${escapeHtml(t("noMatchingConversations"))}</div>`;
     return;
   }
 
@@ -7185,8 +7562,8 @@ async function renderMessengerThreadsList() {
       const isUnread = th.unreadCount > 0;
       const isAdminAvatar = th.contactKey === "admin";
       const snippet = th.lastMessageText
-        ? `${th.lastSenderKey === myKey ? "You: " : ""}${th.lastMessageText}`
-        : "Start a conversation...";
+        ? `${th.lastSenderKey === myKey ? t("youPrefix") : ""}${th.lastMessageText}`
+        : t("startConversationSnippet");
       const timeLabel = formatMessengerShortTime(th.lastSentAt);
 
       return `
@@ -7235,7 +7612,7 @@ document.getElementById("messenger-search-input")?.addEventListener("input", () 
   renderMessengerThreadsList();
 });
 
-async function selectMessengerConversation(recipientId, recipientName, roleLabel = "Direct Message", openMobilePane = true) {
+async function selectMessengerConversation(recipientId, recipientName, roleLabel = "", openMobilePane = true) {
   if (!recipientId) return false;
 
   const allRoster = await loadScopedRosterDocsForCurrentUser();
@@ -7245,12 +7622,12 @@ async function selectMessengerConversation(recipientId, recipientName, roleLabel
     syncMessengerRoleChromeAndComposer(false);
     await renderChatMessages();
     showToast(
-      "Access Restricted",
+      t("toastAccessRestrictedTitle"),
       currentRole === "student"
-        ? "Students can only message their assigned Mentor."
+        ? t("toastStudentOnlyMentorMsg")
         : currentRole === "admin"
-          ? "Admins do not engage in direct chat with students. Use Urgent System Warnings for student notices."
-          : "You are not authorized to message this user.",
+          ? t("toastAdminNoStudentChatMsg")
+          : t("toastNotAuthorizedToMessageUser"),
       "error"
     );
     return false;
@@ -7258,7 +7635,7 @@ async function selectMessengerConversation(recipientId, recipientName, roleLabel
 
   activeChatRecipientId = recipientId;
   activeChatRecipientName = recipientName || recipientId;
-  activeChatRecipientRoleLabel = roleLabel || "Direct Message";
+  activeChatRecipientRoleLabel = roleLabel || t("directMessageRole");
   syncMessengerRoleChromeAndComposer(true);
 
   const drawerCard = document.getElementById("messenger-drawer");
@@ -7292,7 +7669,7 @@ async function selectMessengerConversation(recipientId, recipientName, roleLabel
   return true;
 }
 
-async function openMessengerDrawer(recipientId = null, recipientName = null, roleLabel = "Direct Message") {
+async function openMessengerDrawer(recipientId = null, recipientName = null, roleLabel = "") {
   const modal = document.getElementById("chat-modal");
   const drawerCard = document.getElementById("messenger-drawer");
   if (!modal) return false;
@@ -7303,12 +7680,12 @@ async function openMessengerDrawer(recipientId = null, recipientName = null, rol
   if (recipientId) {
     if (!isMessengerPairAuthorized(currentRole, currentUserId, recipientId)) {
       showToast(
-        "Access Restricted",
+        t("toastAccessRestrictedTitle"),
         currentRole === "student"
-          ? "Students can only message their assigned Mentor."
+          ? t("toastStudentOnlyMentorMsg")
           : currentRole === "admin"
-            ? "Admins cannot open direct Messenger chats with students."
-            : "You do not have permission to message this user.",
+            ? t("toastAdminNoStudentChatMsg")
+            : t("toastNotAuthorizedToMessageUser"),
         "error"
       );
       return false;
@@ -7316,12 +7693,12 @@ async function openMessengerDrawer(recipientId = null, recipientName = null, rol
 
     modal.style.display = "flex";
     const matched = threads.find(
-      (t) => t.contactKey === String(recipientId).toLowerCase()
+      (th) => th.contactKey === String(recipientId).toLowerCase()
     );
     await selectMessengerConversation(
       recipientId,
       recipientName || matched?.contactName || recipientId,
-      roleLabel || matched?.roleTag || "Direct Message",
+      roleLabel || matched?.roleTag || t("directMessageRole"),
       true
     );
     return true;
@@ -7336,7 +7713,6 @@ async function openMessengerDrawer(recipientId = null, recipientName = null, rol
   const isMobileViewport = typeof window !== "undefined" && window.innerWidth <= 768;
   if (isMobileViewport) {
     if (drawerCard) drawerCard.classList.remove("mobile-thread-open");
-    // For students with an assigned mentor (single 1:1 thread), pre-bind header while showing thread list or let them tap
     await renderMessengerThreadsList();
     await renderChatMessages();
     await refreshMessengerUnreadBadges(false);
@@ -7360,7 +7736,7 @@ async function openMessengerDrawer(recipientId = null, recipientName = null, rol
   return true;
 }
 
-async function openChatModal(recipientId, recipientName, roleLabel = "Direct Message") {
+async function openChatModal(recipientId, recipientName, roleLabel = "") {
   return await openMessengerDrawer(recipientId, recipientName, roleLabel);
 }
 
@@ -7402,7 +7778,7 @@ document.getElementById("messenger-mark-all-read")?.addEventListener("click", as
   }
   await renderMessengerThreadsList();
   await refreshMessengerUnreadBadges(false);
-  showToast("Messenger Updated", "All conversation threads marked as read.", "info");
+  showToast(t("toastMessengerUpdatedTitle"), t("toastMessengerUpdatedMsg"), "info");
 });
 
 async function renderChatMessages() {
@@ -7412,16 +7788,16 @@ async function renderChatMessages() {
     const hintText =
       currentRole === "student"
         ? currentStudentMentorId
-          ? "Select your assigned Mentor from the conversation list to start chatting."
-          : "Your mentor has not been assigned yet. Once assigned, you can message your mentor 1:1 right here."
+          ? t("chatHintStudentAssigned")
+          : t("chatHintStudentUnassigned")
         : currentRole === "admin"
-          ? "Select a Mentor from the directory to start a direct conversation."
-          : "Select an assigned Mentee or the International Office to start a conversation.";
+          ? t("chatHintAdmin")
+          : t("chatHintMentor");
 
     listEl.innerHTML = `
       <div class="messenger-placeholder-state">
         <span>💬</span>
-        <strong>Welcome to KSU Compass Messenger</strong>
+        <strong>${escapeHtml(t("welcomeMessengerHeading"))}</strong>
         <p>${escapeHtml(hintText)}</p>
       </div>
     `;
@@ -7439,8 +7815,12 @@ async function renderChatMessages() {
     listEl.innerHTML = `
       <div class="messenger-placeholder-state">
         <span>👋</span>
-        <strong>Say hello to ${escapeHtml(activeChatRecipientName || activeChatRecipientId)}</strong>
-        <p>Messages are saved chronologically with timestamps and never interrupt with blocking popups.</p>
+        <strong>${escapeHtml(
+          t("sayHelloToHeading", {
+            name: activeChatRecipientName || activeChatRecipientId
+          })
+        )}</strong>
+        <p>${escapeHtml(t("sayHelloSub"))}</p>
       </div>
     `;
     return;
@@ -7450,7 +7830,7 @@ async function renderChatMessages() {
     .map((m) => {
       const isMine = String(m.senderId).toLowerCase() === String(senderKey).toLowerCase();
       const stamp = m.sentAt ? m.sentAt.slice(5, 16).replace("T", " ") : "";
-      const senderLabel = isMine ? "You" : m.senderName || m.senderId;
+      const senderLabel = isMine ? t("youLabel") : m.senderName || m.senderId;
       return `
         <div class="chat-bubble-row ${isMine ? "mine" : "theirs"}">
           <div class="chat-bubble-pill">${escapeHtml(m.text)}</div>
@@ -7471,7 +7851,7 @@ document.getElementById("chat-input-form")?.addEventListener("submit", async (e)
 
   // Enforce strict authorization before creating or appending to any chat channel
   if (!isMessengerPairAuthorized(currentRole, currentUserId, activeChatRecipientId)) {
-    showToast("Access Restricted", "You do not have permission to message this recipient.", "error");
+    showToast(t("toastAccessRestrictedTitle"), t("toastNotAuthorizedToMessageUser"), "error");
     return;
   }
 
@@ -7486,7 +7866,7 @@ document.getElementById("chat-input-form")?.addEventListener("submit", async (e)
       const messages = Array.isArray(chatDoc.messages) ? [...chatDoc.messages] : [];
       messages.push({
         senderId: senderKey,
-        senderName: currentRole === "admin" ? "International Office" : currentUserName,
+        senderName: currentRole === "admin" ? t("internationalOfficeName") : currentUserName,
         recipientId: recipientKey,
         recipientName: activeChatRecipientName,
         text,
@@ -7513,7 +7893,7 @@ document.getElementById("chat-input-form")?.addEventListener("submit", async (e)
       await refreshMessengerUnreadBadges(false);
     } catch (err) {
       if (!err?._syncToastShown) {
-        showToast("Message Blocked", err.message || "Unauthorized messaging channel.", "error");
+        showToast(t("toastMessageBlockedTitle"), err.message || t("toastMessageBlockedMsg"), "error");
       }
     }
   };
@@ -7582,7 +7962,7 @@ async function refreshMessengerUnreadBadges(showToastOnNew = false, options = {}
             // Lightweight non-blocking toast preview ONLY — never opens a blocking modal!
             showToast(
               `💬 ${m.senderName || m.senderId}`,
-              m.text || "New message in Messenger.",
+              m.text || t("newMessageInMessenger"),
               "info"
             );
           }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KSU Compass - International Student Onboarding</title>
+  <title data-i18n="pageTitle">KSU Compass - International Student Onboarding</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -17,7 +17,7 @@
       <img src="logo.jpeg" alt="Kyungsung University" class="nav-brand-logo" />
       <div class="nav-brand-text">
         <span class="nav-brand-title" data-i18n="brandName">KSU Compass</span>
-        <span class="nav-brand-portal-tag" id="nav-portal-tag">International Onboarding</span>
+        <span class="nav-brand-portal-tag" id="nav-portal-tag" data-i18n="heroBadge">International Student Onboarding</span>
       </div>
     </div>
 
@@ -30,16 +30,16 @@
     <div class="nav-right">
       <div class="lang-picker-pill desktop-lang-pill">
         <span style="margin-right: 4px;">🌐</span>
-        <select id="global-lang-select" aria-label="Select Language">
-          <option value="en">EN</option>
-          <option value="ko">KO</option>
+        <select id="global-lang-select" aria-label="Select Language" data-i18n-aria-label="selectLanguageAria">
+          <option value="en" data-i18n="langShortEn">EN</option>
+          <option value="ko" data-i18n="langShortKo">KO</option>
         </select>
       </div>
 
       <!-- Logged-in Controls (Hidden on Login Page) -->
       <div id="nav-auth-controls" class="nav-auth-controls" style="display: none;">
         <!-- System B: Standard In-App Messenger Icon -->
-        <button type="button" class="nav-icon-btn nav-messenger-btn" id="nav-messenger-btn" title="Messenger (Chats)" aria-label="Open Messenger">
+        <button type="button" class="nav-icon-btn nav-messenger-btn" id="nav-messenger-btn" title="Messenger (Chats)" aria-label="Open Messenger" data-i18n-title="messengerTitleAttr" data-i18n-aria-label="openMessengerAria">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
           </svg>
@@ -48,7 +48,7 @@
 
         <!-- System A: High-Priority Urgent Institutional Alerts Bell -->
         <div class="nav-bell-wrapper" style="position: relative;">
-          <button type="button" class="nav-bell-btn" id="nav-bell-btn" title="Urgent System Alerts" aria-label="Urgent System Alerts">
+          <button type="button" class="nav-bell-btn" id="nav-bell-btn" title="Urgent System Alerts" aria-label="Urgent System Alerts" data-i18n-title="urgentSystemAlertsTitle" data-i18n-aria-label="urgentSystemAlertsTitle">
             🔔
             <span class="nav-bell-dot" id="nav-unread-dot" style="display: none;"></span>
           </button>
@@ -56,15 +56,15 @@
           <!-- Urgent System Alerts Dropdown -->
           <div id="nav-notifications-dropdown" class="nav-notifications-dropdown" style="display: none;">
             <div class="notif-dropdown-header">
-              <strong>🚨 Urgent System Alerts</strong>
-              <button type="button" id="btn-mark-all-read" class="notif-mark-read-btn">Acknowledge all</button>
+              <strong data-i18n="urgentSystemAlertsHeading">🚨 Urgent System Alerts</strong>
+              <button type="button" id="btn-mark-all-read" class="notif-mark-read-btn" data-i18n="acknowledgeAllBtn">Acknowledge all</button>
             </div>
             <div id="browser-push-permission-bar" class="browser-push-permission-bar" style="display: none;">
-              <span>Enable OS / Mobile Push Alerts for critical deadlines</span>
-              <button type="button" id="btn-enable-browser-push" class="btn-enable-push-sm">Enable</button>
+              <span data-i18n="enablePushPrompt">Enable OS / Mobile Push Alerts for critical deadlines</span>
+              <button type="button" id="btn-enable-browser-push" class="btn-enable-push-sm" data-i18n="enableBtn">Enable</button>
             </div>
             <div id="nav-notifications-list" class="notif-dropdown-list">
-              <div class="notif-empty-state">No active urgent alerts.</div>
+              <div class="notif-empty-state" data-i18n="noActiveUrgentAlerts">No active urgent alerts.</div>
             </div>
           </div>
         </div>
@@ -72,7 +72,7 @@
         <div class="nav-user-profile desktop-user-profile">
           <div class="user-avatar-circle" id="user-avatar-initials">KSU</div>
           <div class="user-meta-text">
-            <span class="user-meta-name" id="nav-user-name">User</span>
+            <span class="user-meta-name" id="nav-user-name" data-i18n="defaultUserLabel">User</span>
             <div style="display: flex; align-items: center; gap: 8px;">
               <button type="button" class="nav-logout-btn change-password-trigger-btn" id="btn-nav-change-password" data-i18n="changePasswordBtn">Change password</button>
               <span style="color: #cbd5e1; font-size: 11px;">·</span>
@@ -82,7 +82,7 @@
         </div>
 
         <!-- Mobile Hamburger Menu Toggle (<= 768px) -->
-        <button type="button" class="mobile-nav-toggle-btn" id="mobile-nav-toggle-btn" aria-label="Open Navigation Menu" aria-expanded="false">
+        <button type="button" class="mobile-nav-toggle-btn" id="mobile-nav-toggle-btn" aria-label="Open Navigation Menu" data-i18n-aria-label="openNavMenuAria" aria-expanded="false">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -107,26 +107,26 @@
 
   <!-- Responsive Mobile Navigation Slide-Over Drawer -->
   <div id="mobile-nav-backdrop" class="mobile-nav-backdrop" style="display: none;"></div>
-  <aside id="mobile-nav-drawer" class="mobile-nav-drawer" aria-label="Mobile Navigation" style="display: none;">
+  <aside id="mobile-nav-drawer" class="mobile-nav-drawer" aria-label="Mobile Navigation" data-i18n-aria-label="mobileNavAria" style="display: none;">
     <div class="mobile-drawer-header">
       <div class="mobile-drawer-user">
         <div class="user-avatar-circle" id="mobile-user-avatar-initials">KSU</div>
         <div class="mobile-drawer-user-meta">
-          <strong id="mobile-nav-user-name">User</strong>
-          <span id="mobile-nav-role-tag">Portal</span>
+          <strong id="mobile-nav-user-name" data-i18n="defaultUserLabel">User</strong>
+          <span id="mobile-nav-role-tag" data-i18n="defaultPortalLabel">Portal</span>
         </div>
       </div>
-      <button type="button" class="mobile-drawer-close-btn" id="mobile-nav-close-btn" aria-label="Close Navigation Menu">&times;</button>
+      <button type="button" class="mobile-drawer-close-btn" id="mobile-nav-close-btn" aria-label="Close Navigation Menu" data-i18n-aria-label="closeNavMenuAria">&times;</button>
     </div>
     <nav class="mobile-drawer-links" id="mobile-nav-links">
       <!-- Dynamically populated per role -->
     </nav>
     <div class="mobile-drawer-footer">
       <div class="mobile-lang-row">
-        <span>🌐 Language</span>
-        <select id="mobile-lang-select" class="mobile-lang-select" aria-label="Select Language">
-          <option value="en">English (EN)</option>
-          <option value="ko">한국어 (KO)</option>
+        <span data-i18n="languageLabel">🌐 Language</span>
+        <select id="mobile-lang-select" class="mobile-lang-select" aria-label="Select Language" data-i18n-aria-label="selectLanguageAria">
+          <option value="en" data-i18n="langOptionEn">English (EN)</option>
+          <option value="ko" data-i18n="langOptionKo">한국어 (KO)</option>
         </select>
       </div>
       <button type="button" class="btn-mobile-logout change-password-trigger-btn" id="btn-mobile-change-password" style="margin-bottom: 8px; background: #f1f5f9; color: #0f172a; border-color: #cbd5e1;" data-i18n="changePasswordBtn">Change password</button>
@@ -194,7 +194,7 @@
       </div>
 
       <div class="login-left-footer">
-        <span>© 2026 KSU Compass</span>
+        <span data-i18n="copyrightText">© 2026 KSU Compass</span>
         <div>
           <a href="#help" id="btn-open-login-help" data-i18n="helpCenter">Help center</a>
         </div>
@@ -226,7 +226,7 @@
           <label class="auth-input-label" for="student-id" data-i18n="studentIdPlaceholder">Student ID (e.g. a2024691204)</label>
           <div class="auth-input-wrapper">
             <span class="auth-input-icon">👤</span>
-            <input type="text" id="student-id" class="auth-input" placeholder="a2024691204" autocomplete="username" />
+            <input type="text" id="student-id" class="auth-input" placeholder="a2024691204" data-i18n-placeholder="studentIdInputPlaceholder" autocomplete="username" />
           </div>
         </div>
 
@@ -235,7 +235,7 @@
           <div class="auth-input-wrapper">
             <span class="auth-input-icon">🔒</span>
             <input type="password" id="student-password" class="auth-input" placeholder="••••••••" autocomplete="current-password" />
-            <button type="button" class="auth-password-toggle" data-target="student-password">Show</button>
+            <button type="button" class="auth-password-toggle" data-target="student-password" data-i18n="showPassword">Show</button>
           </div>
         </div>
 
@@ -259,7 +259,7 @@
           <label class="auth-input-label" for="mentor-id" data-i18n="mentorIdPlaceholder">Mentor ID</label>
           <div class="auth-input-wrapper">
             <span class="auth-input-icon">👤</span>
-            <input type="text" id="mentor-id" class="auth-input" placeholder="Mentor ID" autocomplete="username" />
+            <input type="text" id="mentor-id" class="auth-input" placeholder="Mentor ID" data-i18n-placeholder="mentorIdInputPlaceholder" autocomplete="username" />
           </div>
         </div>
 
@@ -268,7 +268,7 @@
           <div class="auth-input-wrapper">
             <span class="auth-input-icon">🔒</span>
             <input type="password" id="mentor-password" class="auth-input" placeholder="••••••••" autocomplete="current-password" />
-            <button type="button" class="auth-password-toggle" data-target="mentor-password">Show</button>
+            <button type="button" class="auth-password-toggle" data-target="mentor-password" data-i18n="showPassword">Show</button>
           </div>
         </div>
 
@@ -292,7 +292,7 @@
           <label class="auth-input-label" for="admin-email" data-i18n="emailPlaceholder">Admin Email</label>
           <div class="auth-input-wrapper">
             <span class="auth-input-icon">✉️</span>
-            <input type="email" id="admin-email" class="auth-input" placeholder="admin@ksu.ac.kr" autocomplete="username" />
+            <input type="email" id="admin-email" class="auth-input" placeholder="admin@ksu.ac.kr" data-i18n-placeholder="adminEmailInputPlaceholder" autocomplete="username" />
           </div>
         </div>
 
@@ -301,7 +301,7 @@
           <div class="auth-input-wrapper">
             <span class="auth-input-icon">🔒</span>
             <input type="password" id="admin-password" class="auth-input" placeholder="••••••••" autocomplete="current-password" />
-            <button type="button" class="auth-password-toggle" data-target="admin-password">Show</button>
+            <button type="button" class="auth-password-toggle" data-target="admin-password" data-i18n="showPassword">Show</button>
           </div>
         </div>
 
@@ -321,7 +321,7 @@
     <div class="portal-page-header">
       <div class="portal-header-left">
         <span class="portal-role-eyebrow" data-i18n="brandPortalTagStudent">Student portal</span>
-        <h1 class="portal-page-title" id="student-welcome-heading">Good morning, Student</h1>
+        <h1 class="portal-page-title" id="student-welcome-heading" data-i18n="tabStudent">Student</h1>
         <p class="portal-page-subtitle" data-i18n="studentHeaderSub">You're making great progress. Let's keep your onboarding moving.</p>
       </div>
     </div>
@@ -331,11 +331,11 @@
       <div class="urgent-banner-left">
         <span class="urgent-banner-icon">🚨</span>
         <div class="urgent-banner-content">
-          <strong id="student-arc-urgent-text">You have 0 days remaining to submit your Alien Registration Card (ARC) application.</strong>
-          <span id="student-arc-urgent-sub">Official deadline set by the International Office</span>
+          <strong id="student-arc-urgent-text" data-i18n="defaultStudentArcUrgentText">You have {days_left} days remaining to submit your Alien Registration Card (ARC) application.</strong>
+          <span id="student-arc-urgent-sub" data-i18n="defaultStudentArcUrgentSub">Official deadline set by the International Office</span>
         </div>
       </div>
-      <button type="button" class="btn-urgent-banner-action" id="btn-urgent-upload-arc">
+      <button type="button" class="btn-urgent-banner-action" id="btn-urgent-upload-arc" data-i18n="btnUrgentUploadArc">
         ⇪ Upload ARC Proof →
       </button>
     </div>
@@ -344,14 +344,14 @@
     <div class="student-progress-banner">
       <div class="banner-left">
         <div class="banner-eyebrow" data-i18n="yourOnboarding">YOUR ONBOARDING</div>
-        <div class="banner-heading" id="progress-text">0 of 8 steps completed</div>
+        <div class="banner-heading" id="progress-text">0</div>
         <p class="banner-subtext" data-i18n="onboardingBannerSub">Complete your next priority to stay on track for your first semester.</p>
         
         <div class="banner-bar-wrap">
           <div class="banner-bar-track">
             <div class="banner-bar-fill" id="student-horizontal-fill" style="width: 0%;"></div>
           </div>
-          <span class="banner-bar-pct" id="student-pct-text">0% complete</span>
+          <span class="banner-bar-pct" id="student-pct-text">0%</span>
         </div>
       </div>
 
@@ -363,7 +363,7 @@
         </svg>
         <div class="gauge-text-wrap">
           <span class="gauge-pct-val" id="gauge-pct-val">0%</span>
-          <span class="gauge-pct-sub">complete</span>
+          <span class="gauge-pct-sub" data-i18n="gaugeCompleteSub">complete</span>
         </div>
       </div>
     </div>
@@ -391,11 +391,11 @@
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
                 <span class="task-main-label task-title" data-task-id="housing">Move into dorm / housing</span>
-                <span class="task-sub-hint">Upload your housing confirmation</span>
+                <span class="task-sub-hint" data-i18n="taskHintHousing">Upload your housing confirmation</span>
               </div>
             </div>
             <div class="task-right-actions">
-              <button type="button" class="btn-add-proof-outline doc-btn" data-task="housing">⇪ Add proof</button>
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="housing" data-i18n="btnAddProof">Add proof</button>
               <span class="doc-status-badge"></span>
             </div>
           </li>
@@ -408,13 +408,13 @@
                 <div class="task-title-row" style="flex-wrap: wrap; gap: 6px;">
                   <span class="task-main-label task-title" data-task-id="arc">Apply for ARC card</span>
                   <span class="task-badge-priority" data-i18n="badgePriority">🕒 Priority</span>
-                  <span class="arc-deadline-pill" id="student-arc-deadline-badge">📅 Due: Not set</span>
+                  <span class="arc-deadline-pill" id="student-arc-deadline-badge" data-i18n="arcDueNotSet">📅 Due: Not set</span>
                 </div>
-                <span class="task-sub-hint">Required for all international students (reviewed directly by International Office)</span>
+                <span class="task-sub-hint" data-i18n="taskHintArc">Required for all international students (reviewed directly by International Office)</span>
               </div>
             </div>
             <div class="task-right-actions">
-              <button type="button" class="btn-upload-proof doc-btn" data-task="arc">⇪ Upload proof</button>
+              <button type="button" class="btn-upload-proof doc-btn" data-task="arc" data-i18n="btnUploadProof">Upload proof</button>
               <span class="doc-status-badge"></span>
             </div>
           </li>
@@ -425,11 +425,11 @@
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
                 <span class="task-main-label task-title" data-task-id="phone">Get a phone plan</span>
-                <span class="task-sub-hint">Your passport is enough — ARC not required</span>
+                <span class="task-sub-hint" data-i18n="taskHintPhone">Your passport is enough — ARC not required</span>
               </div>
             </div>
             <div class="task-right-actions">
-              <button type="button" class="btn-add-proof-outline doc-btn" data-task="phone">⇪ Add proof</button>
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="phone" data-i18n="btnAddProof">Add proof</button>
               <span class="doc-status-badge"></span>
             </div>
           </li>
@@ -440,11 +440,11 @@
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
                 <span class="task-main-label task-title" data-task-id="bank">Open a bank account</span>
-                <span class="task-sub-hint">Complete after receiving your phone number and ARC</span>
+                <span class="task-sub-hint" data-i18n="taskHintBank">Complete after receiving your phone number and ARC</span>
               </div>
             </div>
             <div class="task-right-actions">
-              <button type="button" class="btn-add-proof-outline doc-btn" data-task="bank">⇪ Add proof</button>
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="bank" data-i18n="btnAddProof">Add proof</button>
               <span class="doc-status-badge"></span>
             </div>
           </li>
@@ -455,11 +455,11 @@
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
                 <span class="task-main-label task-title" data-task-id="insurance">Enroll in health insurance</span>
-                <span class="task-sub-hint">Submit your insurance confirmation</span>
+                <span class="task-sub-hint" data-i18n="taskHintInsurance">Submit your insurance confirmation</span>
               </div>
             </div>
             <div class="task-right-actions">
-              <button type="button" class="btn-add-proof-outline doc-btn" data-task="insurance">⇪ Add proof</button>
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="insurance" data-i18n="btnAddProof">Add proof</button>
               <span class="doc-status-badge"></span>
             </div>
           </li>
@@ -470,11 +470,11 @@
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
                 <span class="task-main-label task-title" data-task-id="lms">Set up LMS / student portal</span>
-                <span class="task-sub-hint">Activate your university account</span>
+                <span class="task-sub-hint" data-i18n="taskHintLms">Activate your university account</span>
               </div>
             </div>
             <div class="task-right-actions">
-              <button type="button" class="btn-add-proof-outline doc-btn" data-task="lms">⇪ Add proof</button>
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="lms" data-i18n="btnAddProof">Add proof</button>
               <span class="doc-status-badge"></span>
             </div>
           </li>
@@ -485,11 +485,11 @@
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
                 <span class="task-main-label task-title" data-task-id="library">Learn how to use the library</span>
-                <span class="task-sub-hint">Complete the library orientation</span>
+                <span class="task-sub-hint" data-i18n="taskHintLibrary">Complete the library orientation</span>
               </div>
             </div>
             <div class="task-right-actions">
-              <button type="button" class="btn-add-proof-outline doc-btn" data-task="library">⇪ Add proof</button>
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="library" data-i18n="btnAddProof">Add proof</button>
               <span class="doc-status-badge"></span>
             </div>
           </li>
@@ -500,11 +500,11 @@
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
                 <span class="task-main-label task-title" data-task-id="transport">Get a student ID card</span>
-                <span class="task-sub-hint">Apply for and receive your university student ID card</span>
+                <span class="task-sub-hint" data-i18n="taskHintTransport">Apply for and receive your university student ID card</span>
               </div>
             </div>
             <div class="task-right-actions">
-              <button type="button" class="btn-add-proof-outline doc-btn" data-task="transport">⇪ Add proof</button>
+              <button type="button" class="btn-add-proof-outline doc-btn" data-task="transport" data-i18n="btnAddProof">Add proof</button>
               <span class="doc-status-badge"></span>
             </div>
           </li>
@@ -526,7 +526,7 @@
               <span class="mentor-online-badge"></span>
             </div>
             <div class="mentor-details-col">
-              <span class="mentor-name-text" id="mentor-display-name">Not Assigned Yet</span>
+              <span class="mentor-name-text" id="mentor-display-name" data-i18n="mentorNotAssignedYet">Not Assigned Yet</span>
               <span class="mentor-role-label" data-i18n="mentorRoleTitle">Student Success Mentor</span>
               <span class="mentor-reply-status" id="mentor-phone-or-reply" data-i18n="mentorReplyTime">• Waiting for mentor assignment</span>
             </div>
@@ -555,7 +555,7 @@
             <div class="orientation-icon-box">🔔</div>
             <div class="orientation-details">
               <h5 id="student-notice-title" data-i18n="campusOrientationTitle">Campus Announcements</h5>
-              <p id="student-notice-sub">No announcements posted yet.</p>
+              <p id="student-notice-sub" data-i18n="noAnnouncementsPosted">No announcements posted yet.</p>
             </div>
           </div>
           <div id="student-announcements-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
@@ -593,7 +593,7 @@
         <div class="kpi-content-col">
           <span class="kpi-label-text" data-i18n="kpiAssignedStudents">Assigned students</span>
           <span class="kpi-value-text" id="kpi-mentor-assigned-count">0</span>
-          <span class="kpi-sub-text" id="kpi-mentor-assigned-sub">0 active</span>
+          <span class="kpi-sub-text" id="kpi-mentor-assigned-sub" data-i18n="kpiAllActive">0 active</span>
         </div>
       </div>
 
@@ -610,8 +610,8 @@
         <div class="kpi-icon-square green">📄</div>
         <div class="kpi-content-col">
           <span class="kpi-label-text" data-i18n="kpiMonthlyReport">Monthly report</span>
-          <span class="kpi-value-text" id="kpi-mentor-report-status">0 submitted</span>
-          <span class="kpi-sub-text" id="kpi-mentor-report-sub">Click + New report to submit</span>
+          <span class="kpi-value-text" id="kpi-mentor-report-status" data-i18n="kpiDaysRemaining">0 submitted</span>
+          <span class="kpi-sub-text" id="kpi-mentor-report-sub" data-i18n="mentorClickNewReportSub">Click + New report to submit</span>
         </div>
       </div>
     </div>
@@ -627,9 +627,9 @@
       <div class="mentee-section-header">
         <div class="mentee-title-group">
           <h3 data-i18n="studentProgress">Student progress</h3>
-          <p id="mentor-month-label">Current Semester</p>
+          <p id="mentor-month-label" data-i18n="mentorCurrentSemester">Current Semester</p>
         </div>
-        <input type="text" id="mentee-search" class="mentee-search-input" placeholder="Search students..." />
+        <input type="text" id="mentee-search" class="mentee-search-input" placeholder="Search students..." data-i18n-placeholder="searchStudentsPlaceholder" />
       </div>
 
       <div class="mentee-cards-grid" id="mentee-list">
@@ -641,22 +641,22 @@
     <div class="recent-activity-section" id="mentor-reports-history-section" style="margin-bottom: 24px;">
       <div class="activity-header" style="flex-wrap: wrap; gap: 12px;">
         <div>
-          <h4>My Submitted Monthly Reports</h4>
-          <p>3-Month Cycle Requirement: 6 sessions total (2 session PDFs per month)</p>
+          <h4 data-i18n="mentorReportsHistoryTitle">My Submitted Monthly Reports</h4>
+          <p data-i18n="mentorReportsHistorySub">3-Month Cycle Requirement: 6 sessions total (2 session PDFs per month)</p>
         </div>
         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-          <span class="mentor-cycle-pill" id="mentor-cycle-progress-badge">0 / 6 Sessions Submitted</span>
-          <button type="button" class="btn-secondary-action" id="mentor-open-report-btn-2" style="padding: 6px 12px; font-size: 12.5px;">+ Submit Report</button>
+          <span class="mentor-cycle-pill" id="mentor-cycle-progress-badge" data-i18n="modalCycleInfoDefaultTitle">0 / 6 Sessions Submitted</span>
+          <button type="button" class="btn-secondary-action" id="mentor-open-report-btn-2" style="padding: 6px 12px; font-size: 12.5px;" data-i18n="btnSubmitReportShort">+ Submit Report</button>
         </div>
       </div>
       <div class="mentor-cycle-bar-wrap">
         <div class="mentor-cycle-bar-track">
           <div class="mentor-cycle-bar-fill" id="mentor-cycle-progress-fill" style="width: 0%;"></div>
         </div>
-        <span class="mentor-cycle-bar-hint" id="mentor-cycle-progress-hint">0 of 6 required counseling session PDFs uploaded across 3-month cycle</span>
+        <span class="mentor-cycle-bar-hint" id="mentor-cycle-progress-hint" data-i18n="modalCycleInfoDefaultSub">0 of 6 required counseling session PDFs uploaded across 3-month cycle</span>
       </div>
       <div id="mentor-own-reports-list" class="activity-feed-list">
-        <div style="padding: 16px; text-align: center; color: #94a3b8; font-size: 13px;">0 reports submitted yet.</div>
+        <div style="padding: 16px; text-align: center; color: #94a3b8; font-size: 13px;" data-i18n="kpiDaysRemaining">0 reports submitted yet.</div>
       </div>
     </div>
 
@@ -670,7 +670,7 @@
       </div>
 
       <div class="activity-feed-list" id="mentor-activity-feed">
-        <div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 13px;">No recent mentee activity yet.</div>
+        <div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 13px;" data-i18n="noRecentMenteeActivity">No recent mentee activity yet.</div>
       </div>
     </div>
   </div>
@@ -706,7 +706,7 @@
         <div class="kpi-content-col">
           <span class="kpi-label-text" data-i18n="kpiTotalStudents">Total students</span>
           <span class="kpi-value-text" id="kpi-admin-total-students">0</span>
-          <span class="kpi-sub-text" id="kpi-admin-total-students-sub" style="color: #16a34a;">0 registered</span>
+          <span class="kpi-sub-text" id="kpi-admin-total-students-sub" style="color: #16a34a;" data-i18n="kpiThisMonth">0 registered</span>
         </div>
       </div>
 
@@ -715,7 +715,7 @@
         <div class="kpi-content-col">
           <span class="kpi-label-text" data-i18n="kpiOnboardingComplete">Onboarding complete</span>
           <span class="kpi-value-text" id="kpi-admin-completion-pct">0%</span>
-          <span class="kpi-sub-text" id="kpi-admin-completion-sub" style="color: #16a34a;">0 of 0 students completed</span>
+          <span class="kpi-sub-text" id="kpi-admin-completion-sub" style="color: #16a34a;" data-i18n="kpiFromLastMonth">0% average progress</span>
         </div>
       </div>
 
@@ -724,7 +724,7 @@
         <div class="kpi-content-col">
           <span class="kpi-label-text" data-i18n="kpiArcProofsToReview">ARC proofs to review</span>
           <span class="kpi-value-text" id="kpi-admin-arc-queue">0</span>
-          <span class="kpi-sub-text" id="kpi-admin-arc-sub" style="color: #ea580c;">0 pending review</span>
+          <span class="kpi-sub-text" id="kpi-admin-arc-sub" style="color: #ea580c;" data-i18n="kpiRequiresAttention">0 pending review</span>
         </div>
       </div>
 
@@ -733,7 +733,7 @@
         <div class="kpi-content-col">
           <span class="kpi-label-text" data-i18n="kpiActiveMentors">Active mentors</span>
           <span class="kpi-value-text" id="kpi-admin-active-mentors">0</span>
-          <span class="kpi-sub-text" id="kpi-admin-mentors-sub">0 students average</span>
+          <span class="kpi-sub-text" id="kpi-admin-mentors-sub" data-i18n="kpiStudentsAverage">0 students average</span>
         </div>
       </div>
     </div>
@@ -745,16 +745,16 @@
           <h3 data-i18n="arcReviewsSectionTitle">ARC proof reviews</h3>
           <p data-i18n="arcReviewsSectionSub">Student uploads come directly to the International Office</p>
         </div>
-        <span class="arc-pending-badge-pill" id="admin-arc-pending-badge">0 pending</span>
+        <span class="arc-pending-badge-pill" id="admin-arc-pending-badge" data-i18n="kpiRequiresAttention">0 pending</span>
       </div>
 
       <div class="arc-reviews-filter-bar">
-        <input type="text" id="admin-search-arc-reviews" class="mentee-search-input" placeholder="Search student or ID..." style="width: 280px;" />
+        <input type="text" id="admin-search-arc-reviews" class="mentee-search-input" placeholder="Search student or ID..." data-i18n-placeholder="searchStudentOrIdPlaceholder" style="width: 280px;" />
         <select id="admin-filter-arc-status" class="checklist-filter-select">
-          <option value="all" selected>All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
+          <option value="all" selected data-i18n="filterAllStatuses">All statuses</option>
+          <option value="pending" data-i18n="statusPending">Pending</option>
+          <option value="approved" data-i18n="statusApproved">Approved</option>
+          <option value="rejected" data-i18n="statusRejected">Rejected</option>
         </select>
       </div>
 
@@ -771,18 +771,18 @@
           </thead>
           <tbody id="admin-arc-tbody">
             <tr>
-              <td colspan="5" style="text-align: center; padding: 28px; color: #94a3b8;">No ARC proof submissions found (0).</td>
+              <td colspan="5" style="text-align: center; padding: 28px; color: #94a3b8;" data-i18n="noArcSubmissionsFound">No ARC proof submissions found (0).</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <div class="arc-reviews-footer" style="flex-wrap: wrap; gap: 12px;">
-        <span id="admin-arc-table-count">Showing 0 submissions</span>
+        <span id="admin-arc-table-count" data-i18n="noArcSubmissionsFound">Showing 0 submissions</span>
         <div class="arc-warning-action-group">
-          <span id="arc-warning-status-badge" class="warning-dispatch-badge">No warning dispatched yet</span>
+          <span id="arc-warning-status-badge" class="warning-dispatch-badge" data-i18n="noWarningDispatchedYet">No warning dispatched yet</span>
           <button type="button" id="btn-broadcast-arc-warning" class="btn-urgent-warning">
-            <span class="btn-warning-label">🚨 Send Warning to Pending Students</span>
+            <span class="btn-warning-label" data-i18n="btnSendWarningPendingStudents">🚨 Send Warning to Pending Students</span>
           </button>
         </div>
       </div>
@@ -792,13 +792,13 @@
     <div class="admin-split-widgets">
       <!-- Left: Bulk Roster Import Card (Dual-Role: Students | Mentors) -->
       <div class="admin-widget-card" id="admin-import-roster-card">
-        <div class="import-role-switcher" id="import-role-switcher" role="tablist" aria-label="Import Roster Role">
-          <button type="button" class="import-role-pill active" id="import-role-btn-students" data-import-role="students" role="tab" aria-selected="true">Students</button>
-          <button type="button" class="import-role-pill" id="import-role-btn-mentors" data-import-role="mentors" role="tab" aria-selected="false">Mentors</button>
+        <div class="import-role-switcher" id="import-role-switcher" role="tablist" aria-label="Import Roster Role" data-i18n-aria-label="importRosterRoleAria">
+          <button type="button" class="import-role-pill active" id="import-role-btn-students" data-import-role="students" role="tab" aria-selected="true" data-i18n="tabStudents">Students</button>
+          <button type="button" class="import-role-pill" id="import-role-btn-mentors" data-import-role="mentors" role="tab" aria-selected="false" data-i18n="tabMentors">Mentors</button>
         </div>
 
-        <h3 id="import-roster-title">Import Student Roster</h3>
-        <p id="import-roster-sub">Upload a CSV file to add or update international students in bulk.</p>
+        <h3 id="import-roster-title" data-i18n="importRosterTitle">Import Student Roster</h3>
+        <p id="import-roster-sub" data-i18n="importRosterSub">Upload a CSV file to add or update international students in bulk.</p>
         
         <div class="csv-drag-drop-zone" id="csv-drag-drop-zone">
           <span class="csv-zone-title" id="csv-zone-title" data-i18n="chooseCsvFile">Choose a CSV file</span>
@@ -806,7 +806,7 @@
           <span id="csv-schema-hint" class="csv-schema-hint">student_id,name,department,mentor_id</span>
         </div>
 
-        <button type="button" class="csv-template-link" id="link-download-csv-template">Download Student CSV Template</button>
+        <button type="button" class="csv-template-link" id="link-download-csv-template" data-i18n="downloadCsvTemplate">Download Student CSV Template</button>
 
         <div id="csv-import-summary-banner" class="csv-import-summary-banner" style="display: none;"></div>
       </div>
@@ -817,14 +817,14 @@
           <h3 style="margin: 0;" data-i18n="needsAttentionTitle">Needs attention</h3>
           <span class="arc-pending-badge-pill" id="needs-attention-badge">0</span>
         </div>
-        <p style="margin-bottom: 14px;">Urgent items requiring staff coordination</p>
+        <p style="margin-bottom: 14px;" data-i18n="needsAttentionSub">Urgent items requiring staff coordination</p>
 
         <div class="needs-attention-list">
           <div class="attention-item-row" id="btn-attention-arc">
             <div class="attention-item-left">
               <span class="attention-dot red"></span>
               <div class="attention-text-col">
-                <strong><span id="attention-arc-count">0 students</span> haven't applied for ARC</strong>
+                <strong><span id="attention-arc-count">0</span> <span data-i18n="attentionArcActionText">haven't applied for ARC</span></strong>
                 <span id="admin-attention-arc-deadline" data-i18n="attentionArcDeadline">Within 90 days of arrival</span>
               </div>
             </div>
@@ -835,7 +835,7 @@
             <div class="attention-item-left">
               <span class="attention-dot orange"></span>
               <div class="attention-text-col">
-                <strong><span id="attention-reports-count">0 mentor reports</span> pending review</strong>
+                <strong><span id="attention-reports-count">0</span> <span data-i18n="attentionReportsActionText">pending review</span></strong>
                 <span data-i18n="attentionReportsPeriod">Monthly reporting period</span>
               </div>
             </div>
@@ -846,7 +846,7 @@
             <div class="attention-item-left">
               <span class="attention-dot blue"></span>
               <div class="attention-text-col">
-                <strong><span id="attention-unassigned-count">0 students</span> unassigned</strong>
+                <strong><span id="attention-unassigned-count">0</span> <span data-i18n="attentionUnassignedActionText">unassigned</span></strong>
                 <span data-i18n="attentionWaitingMentor">Click to assign mentors</span>
               </div>
             </div>
@@ -868,7 +868,7 @@
         </button>
       </div>
 
-      <div class="people-overview-tabs" id="people-overview-tabs" role="tablist" aria-label="People Directory Tabs">
+      <div class="people-overview-tabs" id="people-overview-tabs" role="tablist" aria-label="People Directory Tabs" data-i18n-aria-label="peopleDirectoryTabsAria">
         <button type="button" class="people-tab-btn active" id="people-tab-btn-students" data-people-tab="students" aria-expanded="false" aria-controls="detailed-roster-drawer">
           <span data-i18n="tabStudents">Students</span>
           <span id="people-tab-students-count">[0]</span>
@@ -892,8 +892,8 @@
             <span class="avatar-stack-circle counter">0</span>
           </div>
           <div class="people-preview-text">
-            <strong id="people-preview-headline">0 international students</strong>
-            <span id="people-preview-sub">0% average onboarding completion</span>
+            <strong id="people-preview-headline" data-i18n="kpiThisMonth">0 international students</strong>
+            <span id="people-preview-sub" data-i18n="kpiFromLastMonth">0% average onboarding completion</span>
           </div>
         </div>
       </div>
@@ -901,9 +901,9 @@
       <!-- Detailed Roster Section (Completely hidden by default in collapsed state ▼) -->
       <div id="detailed-roster-drawer" class="people-roster-accordion-body" hidden style="display: none; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
         <div class="people-roster-filter-bar" style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
-          <input type="text" id="admin-search-students" class="mentee-search-input" placeholder="Search roster by ID, name, department, or mentor..." style="flex: 2; min-width: 210px;" />
-          <select id="admin-filter-department" class="checklist-filter-select people-department-select" aria-label="Filter by Department" style="min-width: 190px; min-height: 42px; font-weight: 600;">
-            <option value="all">All Departments</option>
+          <input type="text" id="admin-search-students" class="mentee-search-input" placeholder="Search roster by ID, name, department, or mentor..." data-i18n-placeholder="searchRosterPlaceholder" style="flex: 2; min-width: 210px;" />
+          <select id="admin-filter-department" class="checklist-filter-select people-department-select" aria-label="Filter by Department" data-i18n-aria-label="filterByDepartmentAria" style="min-width: 190px; min-height: 42px; font-weight: 600;">
+            <option value="all" data-i18n="allDepartmentsOption">All Departments</option>
           </select>
           <button type="button" class="modal-btn danger" id="btn-delete-selected-students" disabled>
             <span id="label-delete-selected-students" data-i18n="btnDeleteSelectedStudents">🗑️ Delete Selected (0)</span>
@@ -920,12 +920,12 @@
     <div class="admin-arc-reviews-box" id="admin-reports-box" style="margin-bottom: 24px;">
       <div class="arc-reviews-header" style="flex-wrap: wrap; gap: 12px;">
         <div class="arc-reviews-title-wrap">
-          <h3>📑 Mentor Monthly Reports</h3>
-          <p>Select Fall or Spring Semester, check the calendar months to activate, and inspect each active month's mentor directory (0/2, 1/2, or 2/2 Files Submitted)</p>
+          <h3 data-i18n="adminMentorReportsHeading">📑 Mentor Monthly Reports</h3>
+          <p data-i18n="adminMentorReportsSub">Select Fall or Spring Semester, check the calendar months to activate, and inspect each active month's mentor directory (0/2, 1/2, or 2/2 Files Submitted)</p>
         </div>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-          <span class="arc-pending-badge-pill" id="admin-reports-count-badge">0 files · 0 sessions</span>
-          <button type="button" class="btn-secondary-action" id="btn-export-mentor-pdfs" style="padding: 6px 12px; font-size: 12.5px;">
+          <span class="arc-pending-badge-pill" id="admin-reports-count-badge">0</span>
+          <button type="button" class="btn-secondary-action" id="btn-export-mentor-pdfs" style="padding: 6px 12px; font-size: 12.5px;" data-i18n="btnExportPdfs">
             ⤓ Export PDFs
           </button>
         </div>
@@ -942,7 +942,7 @@
 
       <!-- Dynamic Active Month Cards (Selected Months Only) OR Selected Month Mentor Directory Table -->
       <div id="admin-monthly-reports-list" style="padding: 6px 0 4px;">
-        <div style="text-align: center; padding: 24px; color: #94a3b8; font-size: 13.5px;">Loading semester report folders...</div>
+        <div style="text-align: center; padding: 24px; color: #94a3b8; font-size: 13.5px;" data-i18n="loadingSemesterFolders">Loading semester report folders...</div>
       </div>
     </div>
 
@@ -950,25 +950,25 @@
     <div class="admin-arc-reviews-box" id="admin-announcements-box" style="margin-bottom: 24px;">
       <div class="arc-reviews-header">
         <div class="arc-reviews-title-wrap">
-          <h3>📢 Campus Announcements & Broadcast Notices</h3>
-          <p>Post official updates and orientation schedules (Immigration/ARC notices are shown strictly to Students)</p>
+          <h3 data-i18n="adminAnnouncementsHeading">📢 Campus Announcements & Broadcast Notices</h3>
+          <p data-i18n="adminAnnouncementsSub">Post official updates and orientation schedules (Immigration/ARC notices are shown strictly to Students)</p>
         </div>
       </div>
       <div style="padding: 12px 0 4px;">
         <form id="admin-announcement-form" class="responsive-form-grid-2" style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 16px;">
-          <input type="text" id="announcement-title" class="auth-input" placeholder="Announcement Title (e.g., Spring Campus Orientation)" required />
+          <input type="text" id="announcement-title" class="auth-input" placeholder="Announcement Title (e.g., Spring Campus Orientation)" data-i18n-placeholder="announcementTitlePlaceholder" required />
           <select id="announcement-category" class="auth-input">
-            <option value="General">📌 General Notice</option>
-            <option value="Urgent">🚨 Urgent Alert</option>
-            <option value="Immigration">🪪 Immigration / ARC (Students Only)</option>
+            <option value="General" data-i18n="catGeneralOption">📌 General Notice</option>
+            <option value="Urgent" data-i18n="catUrgentOption">🚨 Urgent Alert</option>
+            <option value="Immigration" data-i18n="catImmigrationOption">🪪 Immigration / ARC (Students Only)</option>
           </select>
-          <textarea id="announcement-body" class="auth-input" rows="2" placeholder="Write the announcement details..." required style="grid-column: 1 / -1; resize: vertical;"></textarea>
+          <textarea id="announcement-body" class="auth-input" rows="2" placeholder="Write the announcement details..." data-i18n-placeholder="announcementBodyPlaceholder" required style="grid-column: 1 / -1; resize: vertical;"></textarea>
           <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end;">
-            <button type="submit" class="btn-primary-action" id="btn-post-announcement">📢 Post Announcement</button>
+            <button type="submit" class="btn-primary-action" id="btn-post-announcement" data-i18n="btnPostAnnouncement">📢 Post Announcement</button>
           </div>
         </form>
         <div id="admin-announcements-list" style="display: flex; flex-direction: column; gap: 10px;">
-          <div style="text-align: center; padding: 14px; color: #94a3b8; font-size: 13px;">0 active announcements.</div>
+          <div style="text-align: center; padding: 14px; color: #94a3b8; font-size: 13px;" data-i18n="zeroActiveAnnouncements">0 active announcements.</div>
         </div>
       </div>
     </div>
@@ -977,54 +977,55 @@
     <div class="admin-arc-reviews-box" id="admin-settings-box">
       <div class="arc-reviews-header">
         <div class="arc-reviews-title-wrap">
-          <h3>⚙️ Portal &amp; ARC Deadline Settings</h3>
-          <p>Configure the official Student ARC submission deadline and customize urgent banner copy</p>
+          <h3 data-i18n="adminSettingsHeading">⚙️ Portal &amp; ARC Deadline Settings</h3>
+          <p data-i18n="adminSettingsSub">Configure the official Student ARC submission deadline and customize urgent banner copy</p>
         </div>
-        <span class="status-pill-badge approved" id="admin-settings-live-badge">● Live Sync Enabled</span>
+        <span class="status-pill-badge approved" id="admin-settings-live-badge" data-i18n="liveSyncEnabledBadge">● Live Sync Enabled</span>
       </div>
 
       <div class="admin-settings-grid">
         <!-- ARC Submission Deadline Picker & Custom Urgent Message -->
         <div class="settings-sub-card">
-          <h4>🪪 Student ARC Submission Deadline</h4>
-          <p>Updates the Student ARC checklist due date and personalized urgent banner message immediately.</p>
+          <h4 data-i18n="studentArcDeadlineCardTitle">🪪 Student ARC Submission Deadline</h4>
+          <p data-i18n="studentArcDeadlineCardSub">Updates the Student ARC checklist due date and personalized urgent banner message immediately.</p>
 
           <div class="auth-input-group" style="margin-top: 12px;">
-            <label class="auth-input-label" for="admin-arc-deadline-input">Submission Due Date &amp; Time</label>
+            <label class="auth-input-label" for="admin-arc-deadline-input" data-i18n="submissionDueDateTimeLabel">Submission Due Date &amp; Time</label>
             <input type="datetime-local" id="admin-arc-deadline-input" class="auth-input" />
           </div>
 
           <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px;">
-            <button type="button" class="btn-table-action" data-deadline-preset="7" style="padding: 4px 10px; font-size: 11.5px;">+7 Days</button>
-            <button type="button" class="btn-table-action" data-deadline-preset="14" style="padding: 4px 10px; font-size: 11.5px;">+14 Days</button>
-            <button type="button" class="btn-table-action" data-deadline-preset="30" style="padding: 4px 10px; font-size: 11.5px;">+30 Days</button>
+            <button type="button" class="btn-table-action" data-deadline-preset="7" style="padding: 4px 10px; font-size: 11.5px;" data-i18n="presetPlus7Days">+7 Days</button>
+            <button type="button" class="btn-table-action" data-deadline-preset="14" style="padding: 4px 10px; font-size: 11.5px;" data-i18n="presetPlus14Days">+14 Days</button>
+            <button type="button" class="btn-table-action" data-deadline-preset="30" style="padding: 4px 10px; font-size: 11.5px;" data-i18n="presetPlus30Days">+30 Days</button>
           </div>
 
           <div class="auth-input-group" style="margin-bottom: 8px;">
-            <label class="auth-input-label" for="admin-arc-custom-message-input">Urgent Banner Custom Message</label>
+            <label class="auth-input-label" for="admin-arc-custom-message-input" data-i18n="urgentBannerCustomMsgLabel">Urgent Banner Custom Message</label>
             <textarea
               id="admin-arc-custom-message-input"
               class="auth-input"
               rows="2"
               placeholder="You have {days_left} days remaining to submit your Alien Registration Card (ARC) application."
+              data-i18n-placeholder="defaultStudentArcUrgentText"
               style="resize: vertical;"
             ></textarea>
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
-              <span style="font-size: 11px; color: #64748b;">Optional dynamic tokens: <code>{days_left}</code>, <code>{deadline}</code></span>
+              <span style="font-size: 11px; color: #64748b;"><span data-i18n="optionalDynamicTokensHint">Optional dynamic tokens:</span> <code>{days_left}</code>, <code>{deadline}</code></span>
               <div style="display: flex; gap: 5px; flex-wrap: wrap;">
                 <button type="button" class="btn-table-action" data-insert-arc-token="{days_left}" style="padding: 2px 8px; font-size: 11px;">+ {days_left}</button>
                 <button type="button" class="btn-table-action" data-insert-arc-token="{deadline}" style="padding: 2px 8px; font-size: 11px;">+ {deadline}</button>
-                <button type="button" class="btn-table-action" id="btn-reset-arc-message-template" style="padding: 2px 8px; font-size: 11px;">↺ Reset Copy</button>
+                <button type="button" class="btn-table-action" id="btn-reset-arc-message-template" style="padding: 2px 8px; font-size: 11px;" data-i18n="btnResetCopy">↺ Reset Copy</button>
               </div>
             </div>
           </div>
 
           <div class="deadline-preview-callout" id="admin-arc-deadline-preview">
-            Student Banner Preview: <strong>"You have -- days remaining to submit your Alien Registration Card (ARC) application."</strong>
+            <span data-i18n="studentUrgentBannerPreviewLabel">Student Urgent Banner:</span> <strong data-i18n="defaultStudentArcUrgentText">"You have {days_left} days remaining to submit your Alien Registration Card (ARC) application."</strong>
           </div>
 
           <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
-            <button type="button" class="btn-primary-action" id="btn-save-arc-deadline">💾 Save ARC Deadline</button>
+            <button type="button" class="btn-primary-action" id="btn-save-arc-deadline" data-i18n="btnSaveArcDeadline">💾 Save ARC Deadline</button>
           </div>
         </div>
       </div>
@@ -1036,27 +1037,27 @@
   ============================================================ -->
   <!-- 1. SYSTEM B: STANDARD IN-APP MESSENGER DRAWER / WIDGET (CASUAL CHAT) -->
   <div id="chat-modal" class="messenger-drawer-overlay" style="display: none;">
-    <div id="messenger-drawer" class="messenger-drawer-card" role="dialog" aria-label="KSU Compass Messenger">
+    <div id="messenger-drawer" class="messenger-drawer-card" role="dialog" aria-label="KSU Compass Messenger" data-i18n-aria-label="messengerAriaLabel">
       <!-- Left / Top Pane: Conversation Threads Inbox -->
       <div class="messenger-sidebar" id="messenger-sidebar">
         <div class="messenger-sidebar-header">
           <div class="messenger-brand-row">
             <span class="messenger-brand-icon">💬</span>
             <div>
-              <h4>Messenger</h4>
-              <span id="messenger-subtitle-scope">Casual chats &amp; consultation</span>
+              <h4 data-i18n="messengerHeading">Messenger</h4>
+              <span id="messenger-subtitle-scope" data-i18n="messengerSubtitleDefault">Casual chats &amp; consultation</span>
             </div>
           </div>
           <div class="messenger-sidebar-actions">
-            <button type="button" id="messenger-mark-all-read" class="notif-mark-read-btn" title="Mark all chats read">Mark read</button>
-            <button type="button" class="modal-close-btn mobile-only-close" id="messenger-sidebar-close" aria-label="Close Messenger">&times;</button>
+            <button type="button" id="messenger-mark-all-read" class="notif-mark-read-btn" title="Mark all chats read" data-i18n-title="markAllChatsReadTitle" data-i18n="markReadBtn">Mark read</button>
+            <button type="button" class="modal-close-btn mobile-only-close" id="messenger-sidebar-close" aria-label="Close Messenger" data-i18n-aria-label="closeMessengerAria">&times;</button>
           </div>
         </div>
         <div class="messenger-search-wrap">
-          <input type="text" id="messenger-search-input" class="messenger-search-input" placeholder="🔍 Search contacts or messages..." autocomplete="off" />
+          <input type="text" id="messenger-search-input" class="messenger-search-input" placeholder="🔍 Search contacts or messages..." data-i18n-placeholder="searchContactsMessagesPlaceholder" autocomplete="off" />
         </div>
         <div class="messenger-threads-list" id="messenger-threads-list">
-          <div class="messenger-empty-threads">Loading conversations...</div>
+          <div class="messenger-empty-threads" data-i18n="loadingConversations">Loading conversations...</div>
         </div>
       </div>
 
@@ -1064,29 +1065,29 @@
       <div class="messenger-main" id="messenger-main">
         <div class="messenger-chat-header">
           <div class="messenger-chat-header-left">
-            <button type="button" class="messenger-back-btn" id="messenger-back-btn" aria-label="Back to Conversations">
+            <button type="button" class="messenger-back-btn" id="messenger-back-btn" aria-label="Back to Conversations" data-i18n-aria-label="backToConversationsAria" data-i18n="backToChatsBtn">
               ← Chats
             </button>
             <div class="messenger-active-avatar" id="chat-modal-avatar">--</div>
             <div class="messenger-active-meta">
-              <h3 id="chat-modal-recipient">Select a conversation</h3>
-              <span id="chat-modal-role">Choose a contact on the left to start chatting</span>
+              <h3 id="chat-modal-recipient" data-i18n="selectConversationHeading">Select a conversation</h3>
+              <span id="chat-modal-role" data-i18n="chooseContactToChatSub">Choose a contact on the left to start chatting</span>
             </div>
           </div>
-          <button type="button" class="modal-close-btn" id="chat-modal-close" aria-label="Close Messenger">&times;</button>
+          <button type="button" class="modal-close-btn" id="chat-modal-close" aria-label="Close Messenger" data-i18n-aria-label="closeMessengerAria">&times;</button>
         </div>
 
         <div class="chat-window">
           <div class="chat-messages-container" id="chat-messages-list">
             <div class="messenger-placeholder-state">
               <span>💬</span>
-              <strong>Welcome to KSU Compass Messenger</strong>
-              <p id="messenger-placeholder-hint">Select an authorized contact from your inbox to start a conversation.</p>
+              <strong data-i18n="welcomeMessengerHeading">Welcome to KSU Compass Messenger</strong>
+              <p id="messenger-placeholder-hint" data-i18n="welcomeMessengerHintDefault">Select an authorized contact from your inbox to start a conversation.</p>
             </div>
           </div>
           <form id="chat-input-form" class="chat-input-bar">
-            <input type="text" id="chat-text-input" class="chat-text-input" placeholder="Write a message..." autocomplete="off" />
-            <button type="submit" class="btn-primary-action messenger-send-btn" id="chat-send-btn">Send ➤</button>
+            <input type="text" id="chat-text-input" class="chat-text-input" placeholder="Write a message..." data-i18n-placeholder="writeMessagePlaceholder" autocomplete="off" />
+            <button type="submit" class="btn-primary-action messenger-send-btn" id="chat-send-btn" data-i18n="sendBtn">Send ➤</button>
           </form>
         </div>
       </div>
@@ -1097,32 +1098,32 @@
   <div id="doc-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 id="doc-modal-title">Document Proof</h3>
-        <button type="button" class="modal-close-btn" id="doc-modal-close">&times;</button>
+        <h3 id="doc-modal-title" data-i18n="docModalTitle">Document Proof</h3>
+        <button type="button" class="modal-close-btn" id="doc-modal-close" aria-label="Close" data-i18n-aria-label="closeBtn">&times;</button>
       </div>
       <div class="modal-body">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
           <div>
-            <strong id="doc-modal-student" style="font-size: 14px; color: #0f172a;">Student</strong>
-            <p id="doc-modal-task" style="margin: 2px 0 0; font-size: 12.5px; color: #64748b;">Task</p>
+            <strong id="doc-modal-student" style="font-size: 14px; color: #0f172a;" data-i18n="tabStudent">Student</strong>
+            <p id="doc-modal-task" style="margin: 2px 0 0; font-size: 12.5px; color: #64748b;" data-i18n="navChecklist">Task</p>
           </div>
-          <span id="doc-modal-status-badge" class="status-pill-badge pending">Pending</span>
+          <span id="doc-modal-status-badge" class="status-pill-badge pending" data-i18n="statusPending">Pending</span>
         </div>
 
         <div id="doc-preview-container" style="text-align: center; margin: 16px 0; max-height: 320px; overflow-y: auto;"></div>
 
         <div id="doc-modal-note-row" style="display: none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 10px; margin-top: 10px;">
-          <strong style="font-size: 12px; color: #b91c1c;">Feedback / Note:</strong>
+          <strong style="font-size: 12px; color: #b91c1c;" data-i18n="feedbackNoteLabel">Feedback / Note:</strong>
           <p id="doc-modal-feedback-text" style="margin: 4px 0 0; font-size: 12px; color: #7f1d1d;"></p>
         </div>
 
         <div id="doc-reviewer-feedback-section" style="display: none; margin-top: 14px;">
-          <label style="display: block; font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 4px;">Review Note / Rejection Reason:</label>
-          <input type="text" id="doc-reviewer-note-input" class="auth-input" placeholder="e.g. Please provide a clearer stamp copy" />
+          <label style="display: block; font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 4px;" data-i18n="reviewNoteRejectionReasonLabel">Review Note / Rejection Reason:</label>
+          <input type="text" id="doc-reviewer-note-input" class="auth-input" placeholder="e.g. Please provide a clearer stamp copy" data-i18n-placeholder="reviewNotePlaceholder" />
         </div>
       </div>
       <div class="modal-footer" id="doc-modal-actions">
-        <button type="button" class="modal-btn" id="doc-modal-close-btn">Close</button>
+        <button type="button" class="modal-btn" id="doc-modal-close-btn" data-i18n="closeBtn">Close</button>
       </div>
     </div>
   </div>
@@ -1131,8 +1132,8 @@
   <div id="arc-guide-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card wide-modal">
       <div class="modal-header">
-        <h3 data-i18n="upNextArcTitle">Apply for your ARC - Guide & Requirements</h3>
-        <button type="button" class="modal-close-btn" id="arc-guide-modal-close">&times;</button>
+        <h3 data-i18n="arcGuideModalTitle">Apply for your ARC - Guide &amp; Requirements</h3>
+        <button type="button" class="modal-close-btn" id="arc-guide-modal-close" aria-label="Close" data-i18n-aria-label="closeBtn">&times;</button>
       </div>
       <div class="modal-body" style="font-size: 13.5px; line-height: 1.6; max-height: 70vh; overflow-y: auto;">
         <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
@@ -1140,53 +1141,53 @@
           <p style="margin: 0; font-size: 12px; color: #92400e;" data-i18n="arcGuideSub">Must be completed within 90 days of arrival in South Korea</p>
         </div>
 
-        <h4 style="margin: 16px 0 8px; font-size: 14px; color: #0f172a; font-weight: 700;">Required Documents (외국인등록증 신청 준비 서류)</h4>
+        <h4 style="margin: 16px 0 8px; font-size: 14px; color: #0f172a; font-weight: 700;" data-i18n="arcGuideReqDocsHeading">Required Documents</h4>
         <ol style="padding-left: 20px; margin: 0 0 16px;">
-          <li style="margin-bottom: 6px;"><strong>Application Form (통합신청서)</strong></li>
-          <li style="margin-bottom: 6px;"><strong>Passport Copy (여권 사본)</strong> &amp; Original Passport</li>
+          <li style="margin-bottom: 6px;"><strong data-i18n="arcGuideDoc1">Application Form</strong></li>
+          <li style="margin-bottom: 6px;"><strong data-i18n="arcGuideDoc2Strong">Passport Copy</strong> <span data-i18n="arcGuideDoc2Rest">&amp; Original Passport</span></li>
           <li style="margin-bottom: 6px;">
-            <strong>ID Photo (사진 1매)</strong>
+            <strong data-i18n="arcGuideDoc3Strong">ID Photo (1 photo)</strong>
             <div style="font-size: 12px; color: #64748b; margin-top: 2px;">
-              • Size: 3.5 x 4.5 cm<br />
-              • Taken within the last 6 months (6개월 이내 새로 찍은 사진)<br />
-              • White background (흰색 배경)
+              <div data-i18n="arcGuideDoc3Size">• Size: 3.5 x 4.5 cm</div>
+              <div data-i18n="arcGuideDoc3Recent">• Taken within the last 6 months</div>
+              <div data-i18n="arcGuideDoc3Bg">• White background</div>
             </div>
           </li>
-          <li style="margin-bottom: 6px;"><strong>Application Fee (수수료):</strong> 50,000 KRW</li>
+          <li style="margin-bottom: 6px;"><strong data-i18n="arcGuideDoc4Strong">Application Fee:</strong> <span data-i18n="arcGuideDoc4Fee">50,000 KRW</span></li>
           <li style="margin-bottom: 6px;">
-            <strong>House Contract (집계약서 / 거주증명서)</strong>
+            <strong data-i18n="arcGuideDoc5Strong">Housing Contract / Proof of Residence</strong>
             <div style="background: #f1f5f9; padding: 8px 12px; border-radius: 6px; margin-top: 6px; font-size: 12px;">
-              <strong>Dormitory Addresses (기숙사 주소):</strong>
-              <p style="margin: 2px 0;">• On-Campus Dorm: 부산시 남구 수영로 309, 경성대학교 제1누리생활관</p>
-              <p style="margin: 2px 0;">• Off-Campus Dorm: 부산 남구 용소로 7번길 63-3</p>
+              <strong data-i18n="arcGuideDormHeading">Dormitory Addresses:</strong>
+              <p style="margin: 2px 0;" data-i18n="arcGuideDormOnCampus">• On-Campus Dorm: 309 Suyeong-ro, Nam-gu, Busan (Kyungsung Univ. Nuri Dorm 1)</p>
+              <p style="margin: 2px 0;" data-i18n="arcGuideDormOffCampus">• Off-Campus Dorm: 63-3 Yongso-ro 7beon-gil, Nam-gu, Busan</p>
             </div>
           </li>
         </ol>
 
-        <h4 style="margin: 18px 0 8px; font-size: 13.5px; color: #0f172a; font-weight: 700;">Special Housing Scenarios (거주 형태별 추가 서류)</h4>
+        <h4 style="margin: 18px 0 8px; font-size: 13.5px; color: #0f172a; font-weight: 700;" data-i18n="arcGuideSpecialHousingHeading">Special Housing Scenarios</h4>
         
         <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; background: #fafafa;">
-          <strong style="color: #0369a1; font-size: 13px;">👥 If you live with a friend (친구와 같이 살면):</strong>
+          <strong style="color: #0369a1; font-size: 13px;" data-i18n="arcGuideFriendHeading">👥 If you live with a friend:</strong>
           <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12.5px; color: #334155;">
-            <li>House contract (집계약서)</li>
-            <li>Copy of friend's ARC / passport (친구의 신분증 사본)</li>
-            <li>Fill the Confirmation of Residence (거주숙소제공 확인서)</li>
+            <li data-i18n="arcGuideFriendItem1">House contract</li>
+            <li data-i18n="arcGuideFriendItem2">Copy of friend's ARC / passport</li>
+            <li data-i18n="arcGuideFriendItem3">Completed Confirmation of Residence form</li>
           </ul>
         </div>
 
         <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; background: #fafafa;">
-          <strong style="color: #b45309; font-size: 13px;">🏢 If you live in Gosiwon / Airbnb (고시원 / 에어비앤비에 살면):</strong>
+          <strong style="color: #b45309; font-size: 13px;" data-i18n="arcGuideGosiwonHeading">🏢 If you live in a Gosiwon / Airbnb:</strong>
           <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 12.5px; color: #334155;">
-            <li>House contract (집계약서)</li>
-            <li>Photocopy of Owner's ID card (집주인의 신분증 사본)</li>
-            <li>Fill the Confirmation of Residence (거주숙소제공 확인서)</li>
-            <li>Owner's Business License (사업자등록증 사본)</li>
-            <li>The most recent proof of payment (최근 월세/결제 영수증)</li>
+            <li data-i18n="arcGuideGosiwonItem1">House contract</li>
+            <li data-i18n="arcGuideGosiwonItem2">Photocopy of owner's ID card</li>
+            <li data-i18n="arcGuideGosiwonItem3">Completed Confirmation of Residence form</li>
+            <li data-i18n="arcGuideGosiwonItem4">Owner's Business Registration Certificate</li>
+            <li data-i18n="arcGuideGosiwonItem5">Most recent proof of rent payment</li>
           </ul>
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn-primary-action" id="arc-guide-modal-ok-btn">Understood</button>
+        <button type="button" class="btn-primary-action" id="arc-guide-modal-ok-btn" data-i18n="understoodBtn">Understood</button>
       </div>
     </div>
   </div>
@@ -1196,65 +1197,65 @@
     <div class="modal-card wide-modal">
       <div class="modal-header">
         <h3 data-i18n="submitMonthlyReportBtn">📑 Submit Mentor Monthly Report</h3>
-        <button type="button" class="modal-close-btn" id="monthly-report-modal-close">&times;</button>
+        <button type="button" class="modal-close-btn" id="monthly-report-modal-close" aria-label="Close" data-i18n-aria-label="closeBtn">&times;</button>
       </div>
       <form id="monthly-report-form">
         <div class="modal-body" style="max-height: 72vh; overflow-y: auto;">
           <!-- Cycle Quota Status Banner -->
           <div id="modal-mentor-cycle-info" class="modal-cycle-info-banner">
-            <strong>Cycle Progress: 0 / 6 Sessions Submitted</strong>
-            <span>Each mentor submits 6 session reports across a 3-month cycle (2 session PDFs per month).</span>
+            <strong data-i18n="modalCycleInfoDefaultTitle">Cycle Progress: 0 / 6 Sessions Submitted</strong>
+            <span data-i18n="modalCycleInfoDefaultSub">Each mentor submits 6 session reports across a 3-month cycle (2 session PDFs per month).</span>
           </div>
 
           <div class="responsive-form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="auth-input-group">
-              <label class="auth-input-label">Reporting Month</label>
+              <label class="auth-input-label" data-i18n="reportingMonthLabel">Reporting Month</label>
               <input type="month" id="report-month-input" class="auth-input" value="2026-10" required />
             </div>
             <div class="auth-input-group">
-              <label class="auth-input-label">Sessions Registered (Auto 1:1 from PDFs)</label>
+              <label class="auth-input-label" data-i18n="sessionsRegisteredLabel">Sessions Registered (Auto 1:1 from PDFs)</label>
               <input type="number" id="report-sessions-input" class="auth-input" min="0" max="2" value="0" readonly style="background: #f1f5f9; font-weight: 700; color: #0f172a; cursor: not-allowed;" />
             </div>
           </div>
 
           <div class="auth-input-group">
-            <label class="auth-input-label">Report Title</label>
-            <input type="text" id="report-title-input" class="auth-input" placeholder="e.g. October 2026 Mentorship Activity Report" required />
+            <label class="auth-input-label" data-i18n="reportTitleLabel">Report Title</label>
+            <input type="text" id="report-title-input" class="auth-input" placeholder="e.g. October 2026 Mentorship Activity Report" data-i18n-placeholder="reportTitlePlaceholder" required />
           </div>
 
           <div class="auth-input-group">
-            <label class="auth-input-label">Activities Summary &amp; Progress</label>
-            <textarea id="report-notes-input" class="auth-input" rows="3" placeholder="Summary of meetings, onboarding assistance, and settlement progress..." required style="resize: vertical;"></textarea>
+            <label class="auth-input-label" data-i18n="activitiesSummaryLabel">Activities Summary &amp; Progress</label>
+            <textarea id="report-notes-input" class="auth-input" rows="3" placeholder="Summary of meetings, onboarding assistance, and settlement progress..." data-i18n-placeholder="activitiesSummaryPlaceholder" required style="resize: vertical;"></textarea>
           </div>
 
           <div class="auth-input-group">
-            <label class="auth-input-label">Student Concerns / Special Notes (Optional)</label>
-            <textarea id="report-concerns-input" class="auth-input" rows="2" placeholder="Any academic, housing, or visa difficulties reported by mentees..." style="resize: vertical;"></textarea>
+            <label class="auth-input-label" data-i18n="studentConcernsLabel">Student Concerns / Special Notes (Optional)</label>
+            <textarea id="report-concerns-input" class="auth-input" rows="2" placeholder="Any academic, housing, or visa difficulties reported by mentees..." data-i18n-placeholder="studentConcernsPlaceholder" style="resize: vertical;"></textarea>
           </div>
 
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-top: 8px;">
-            <strong style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 4px;">📎 Required: Attach Both Session PDFs Together (2 PDFs = 2 Monthly Sessions)</strong>
-            <p style="font-size: 11.5px; color: #64748b; margin: 0 0 10px;">Both Session 1 PDF and Session 2 PDF must be uploaded together at the same time. Previously submitted months remain permanently stored.</p>
+            <strong style="display: block; font-size: 13px; color: #0f172a; margin-bottom: 4px;" data-i18n="attachBothPdfsHeading">📎 Required: Attach Both Session PDFs Together (2 PDFs = 2 Monthly Sessions)</strong>
+            <p style="font-size: 11.5px; color: #64748b; margin: 0 0 10px;" data-i18n="attachBothPdfsDesc">Both Session 1 PDF and Session 2 PDF must be uploaded together at the same time. Previously submitted months remain permanently stored.</p>
             <div class="responsive-form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div>
-                <label id="report-slot-1-label" for="report-pdf-1" style="font-size: 11.5px; font-weight: 700; color: #334155;">Session 1 PDF Document <span style="color: #dc2626;">*</span></label>
+                <label id="report-slot-1-label" for="report-pdf-1" style="font-size: 11.5px; font-weight: 700; color: #334155;" data-i18n="session1PdfLabel">Session 1 PDF Document *</label>
                 <div id="report-slot-1-status" style="display: none; font-size: 11.5px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px; margin-top: 4px; font-weight: 600;"></div>
                 <input type="file" id="report-pdf-1" accept="application/pdf,.pdf" required class="auth-input" style="font-size: 12px; padding: 6px; margin-top: 4px;" />
               </div>
               <div>
-                <label id="report-slot-2-label" for="report-pdf-2" style="font-size: 11.5px; font-weight: 700; color: #334155;">Session 2 PDF Document <span style="color: #dc2626;">*</span></label>
+                <label id="report-slot-2-label" for="report-pdf-2" style="font-size: 11.5px; font-weight: 700; color: #334155;" data-i18n="session2PdfLabel">Session 2 PDF Document *</label>
                 <div id="report-slot-2-status" style="display: none; font-size: 11.5px; color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 8px 10px; margin-top: 4px; font-weight: 600;"></div>
                 <input type="file" id="report-pdf-2" accept="application/pdf,.pdf" required class="auth-input" style="font-size: 12px; padding: 6px; margin-top: 4px;" />
               </div>
             </div>
-            <div id="mentor-both-pdfs-requirement-note" style="margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; background: #fff7ed; border: 1px solid #fed7aa; color: #c2410c;">
+            <div id="mentor-both-pdfs-requirement-note" style="margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; background: #fff7ed; border: 1px solid #fed7aa; color: #c2410c;" data-i18n="attachBothPdfsDesc">
               ⚠️ Required: Please attach both Session 1 PDF and Session 2 PDF together (0 / 2 selected) to enable the Submit button.
             </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="submit" class="btn-primary-action" id="mentor-report-submit-btn" disabled>🔒 Attach Both 2 PDFs to Submit (0/2)</button>
-          <button type="button" class="modal-btn" id="monthly-report-cancel-btn">Cancel</button>
+          <button type="submit" class="btn-primary-action" id="mentor-report-submit-btn" disabled data-i18n="submitMonthlyReportBtn">🔒 Attach Both 2 PDFs to Submit (0/2)</button>
+          <button type="button" class="modal-btn" id="monthly-report-cancel-btn" data-i18n="cancelBtn">Cancel</button>
         </div>
       </form>
     </div>
@@ -1265,14 +1266,14 @@
     <div class="modal-card wide-modal" style="max-width: 780px;">
       <div class="modal-header">
         <div>
-          <h3 id="report-detail-title" style="margin: 0;">📑 Mentor Monthly Session Files</h3>
-          <span id="report-detail-subtitle" style="font-size: 12px; color: #64748b;">2 Session PDFs per Month · Permanent Append-Only History</span>
+          <h3 id="report-detail-title" style="margin: 0;" data-i18n="reportDetailModalDefaultTitle">📑 Mentor Monthly Session Files</h3>
+          <span id="report-detail-subtitle" style="font-size: 12px; color: #64748b;" data-i18n="reportDetailModalDefaultSub">2 Session PDFs per Month · Permanent Append-Only History</span>
         </div>
-        <button type="button" class="modal-close-btn" id="report-detail-close">&times;</button>
+        <button type="button" class="modal-close-btn" id="report-detail-close" aria-label="Close" data-i18n-aria-label="closeBtn">&times;</button>
       </div>
       <div class="modal-body" id="report-detail-body" style="max-height: 74vh; overflow-y: auto;"></div>
       <div class="modal-footer" id="report-detail-footer">
-        <button type="button" class="modal-btn" id="report-detail-close-btn">Close</button>
+        <button type="button" class="modal-btn" id="report-detail-close-btn" data-i18n="closeBtn">Close</button>
       </div>
     </div>
   </div>
@@ -1281,29 +1282,29 @@
   <div id="add-person-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card">
       <div class="modal-header">
-        <h3 data-i18n="btnAddPerson">Add Person to Roster</h3>
-        <button type="button" class="modal-close-btn" id="add-person-modal-close">&times;</button>
+        <h3 data-i18n="addPersonModalTitle">Add Person to Roster</h3>
+        <button type="button" class="modal-close-btn" id="add-person-modal-close" aria-label="Close" data-i18n-aria-label="closeBtn">&times;</button>
       </div>
       <form id="add-person-form">
         <div class="modal-body">
           <div class="auth-input-group">
-            <label class="auth-input-label">Role</label>
+            <label class="auth-input-label" data-i18n="roleLabel">Role</label>
             <select id="roster-role" class="auth-input">
-              <option value="student">Student</option>
-              <option value="mentor">Mentor</option>
+              <option value="student" data-i18n="tabStudent">Student</option>
+              <option value="mentor" data-i18n="tabMentor">Mentor</option>
             </select>
           </div>
           <div class="auth-input-group">
-            <label class="auth-input-label">User ID</label>
-            <input type="text" id="roster-id" class="auth-input" placeholder="e.g. a2024691204 or m01" required />
+            <label class="auth-input-label" data-i18n="userIdLabel">User ID</label>
+            <input type="text" id="roster-id" class="auth-input" placeholder="e.g. a2024691204 or m01" data-i18n-placeholder="userIdInputPlaceholder" required />
           </div>
           <div class="auth-input-group">
-            <label class="auth-input-label">Full Name</label>
-            <input type="text" id="roster-name" class="auth-input" placeholder="e.g. Test Student" required />
+            <label class="auth-input-label" data-i18n="fullNameLabel">Full Name</label>
+            <input type="text" id="roster-name" class="auth-input" placeholder="e.g. Test Student" data-i18n-placeholder="fullNameInputPlaceholder" required />
           </div>
           <div class="auth-input-group">
-            <label class="auth-input-label">Department</label>
-            <input type="text" id="roster-department" class="auth-input" list="ksu-department-suggestions" placeholder="e.g. Global Business, Computer Science..." required />
+            <label class="auth-input-label" data-i18n="departmentLabel">Department</label>
+            <input type="text" id="roster-department" class="auth-input" list="ksu-department-suggestions" placeholder="e.g. Global Business, Computer Science..." data-i18n-placeholder="departmentInputPlaceholder" required />
             <datalist id="ksu-department-suggestions">
               <option value="Global Business"></option>
               <option value="Computer Science"></option>
@@ -1314,23 +1315,23 @@
             </datalist>
           </div>
           <div class="auth-input-group">
-            <label class="auth-input-label">Email (Optional)</label>
-            <input type="email" id="roster-email" class="auth-input" placeholder="e.g. student@ks.ac.kr" />
+            <label class="auth-input-label" data-i18n="emailOptionalLabel">Email (Optional)</label>
+            <input type="email" id="roster-email" class="auth-input" placeholder="e.g. student@ks.ac.kr" data-i18n-placeholder="emailInputPlaceholder" />
           </div>
           <div class="auth-input-group" id="roster-phone-group" style="display: none;">
-            <label class="auth-input-label">Phone Number (Mentor)</label>
-            <input type="tel" id="roster-phone" class="auth-input" placeholder="01012345678" />
+            <label class="auth-input-label" data-i18n="phoneMentorLabel">Phone Number (Mentor)</label>
+            <input type="tel" id="roster-phone" class="auth-input" placeholder="01012345678" data-i18n-placeholder="phoneInputPlaceholder" />
           </div>
           <div class="auth-input-group" id="roster-mentor-group">
-            <label class="auth-input-label">Assign Mentor (Optional — leave blank to auto-assign by Department)</label>
+            <label class="auth-input-label" data-i18n="assignMentorOptionalLabel">Assign Mentor (Optional — leave blank to auto-assign by Department)</label>
             <select id="roster-mentor-id" class="auth-input">
-              <option value="">Auto-assign by Department (or leave Unassigned)...</option>
+              <option value="" data-i18n="autoAssignByDeptOption">Auto-assign by Department (or leave Unassigned)...</option>
             </select>
           </div>
         </div>
         <div class="modal-footer">
-          <button type="submit" class="btn-primary-action" id="roster-add-btn">Add Person</button>
-          <button type="button" class="modal-btn" id="add-person-cancel-btn">Cancel</button>
+          <button type="submit" class="btn-primary-action" id="roster-add-btn" data-i18n="btnAddPerson">Add Person</button>
+          <button type="button" class="modal-btn" id="add-person-cancel-btn" data-i18n="cancelBtn">Cancel</button>
         </div>
       </form>
     </div>
@@ -1340,20 +1341,20 @@
   <div id="arc-warning-confirm-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card" style="max-width: 440px;">
       <div class="modal-header">
-        <h3 id="arc-warning-confirm-title">Urgent Reminder Dispatched</h3>
-        <button type="button" class="modal-close-btn" id="arc-warning-confirm-close">&times;</button>
+        <h3 id="arc-warning-confirm-title" data-i18n="modalUrgentReminderDispatchedTitle">Urgent Reminder Dispatched</h3>
+        <button type="button" class="modal-close-btn" id="arc-warning-confirm-close" aria-label="Close" data-i18n-aria-label="closeBtn">&times;</button>
       </div>
       <div class="modal-body" style="text-align: center; padding: 26px 24px;">
         <div style="width: 52px; height: 52px; border-radius: 50%; background: #dcfce7; color: #16a34a; font-size: 24px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px;">✓</div>
-        <p id="arc-warning-confirm-message" style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0 0 8px;">
+        <p id="arc-warning-confirm-message" style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0 0 8px;" data-i18n="toastUrgentReminderSentTitle">
           Urgent reminder successfully sent to 0 pending students.
         </p>
-        <p id="arc-warning-confirm-meta" style="font-size: 12.5px; color: #64748b; margin: 0;">
+        <p id="arc-warning-confirm-meta" style="font-size: 12.5px; color: #64748b; margin: 0;" data-i18n="adminUrgentBellNote">
           Students with pending ARC applications now see their personalized countdown banner. Duplicate alerts were prevented.
         </p>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn-primary-action" id="arc-warning-confirm-ok">Done</button>
+        <button type="button" class="btn-primary-action" id="arc-warning-confirm-ok" data-i18n="doneBtn">Done</button>
       </div>
     </div>
   </div>
@@ -1362,17 +1363,17 @@
   <div id="csv-import-feedback-modal" class="modal-overlay" style="display: none;">
     <div class="modal-card" style="max-width: 460px;">
       <div class="modal-header">
-        <h3 id="csv-feedback-modal-title">Roster Import Complete</h3>
-        <button type="button" class="modal-close-btn" id="csv-feedback-modal-close">&times;</button>
+        <h3 id="csv-feedback-modal-title" data-i18n="studentRosterImportCompleteTitle">Roster Import Complete</h3>
+        <button type="button" class="modal-close-btn" id="csv-feedback-modal-close" aria-label="Close" data-i18n-aria-label="closeBtn">&times;</button>
       </div>
       <div class="modal-body" style="padding: 24px;">
-        <p id="csv-feedback-modal-message" style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0 0 10px; line-height: 1.45;">
+        <p id="csv-feedback-modal-message" style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0 0 10px; line-height: 1.45;" data-i18n="toastCsvImportCompleteTitle">
           Successfully imported 0 Students. Auto-assigned 0 students to matching department mentors.
         </p>
         <div id="csv-feedback-modal-meta" style="font-size: 12.5px; color: #475569; margin: 0; line-height: 1.5;"></div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn-primary-action" id="csv-feedback-modal-ok">Done</button>
+        <button type="button" class="btn-primary-action" id="csv-feedback-modal-ok" data-i18n="doneBtn">Done</button>
       </div>
     </div>
   </div>
@@ -1381,26 +1382,26 @@
   <div id="urgent-system-alert-modal" class="modal-overlay urgent-blocking-overlay" role="alertdialog" aria-modal="true" aria-labelledby="urgent-alert-title" style="display: none;">
     <div class="modal-card urgent-alert-modal-card">
       <div class="urgent-alert-banner-top">
-        <span class="urgent-pulse-badge">🚨 CRITICAL INSTITUTIONAL ALERT</span>
-        <span class="urgent-alert-queue-count" id="urgent-alert-queue-count" style="display: none;">1 of 1</span>
+        <span class="urgent-pulse-badge" data-i18n="urgentCriticalBadge">🚨 CRITICAL INSTITUTIONAL ALERT</span>
+        <span class="urgent-alert-queue-count" id="urgent-alert-queue-count" style="display: none;">1 / 1</span>
       </div>
       <div class="urgent-alert-body">
         <div class="urgent-alert-icon-ring">⚠️</div>
-        <h3 id="urgent-alert-title" class="urgent-alert-title">Official Deadline Notice</h3>
-        <p id="urgent-alert-sender" class="urgent-alert-sender">Issued by International Office (Admin)</p>
+        <h3 id="urgent-alert-title" class="urgent-alert-title" data-i18n="urgentDefaultTitle">Official Deadline Notice</h3>
+        <p id="urgent-alert-sender" class="urgent-alert-sender" data-i18n="internationalOfficeSender">Issued by International Office (Admin)</p>
         <div class="urgent-alert-message-box">
-          <p id="urgent-alert-message">Please submit your required documents immediately.</p>
-          <span id="urgent-alert-meta" class="urgent-alert-meta">Action Required</span>
+          <p id="urgent-alert-message" data-i18n="urgentDefaultMsg">Please submit your required documents immediately.</p>
+          <span id="urgent-alert-meta" class="urgent-alert-meta" data-i18n="urgentActionRequiredMeta">Action Required</span>
         </div>
-        <p class="urgent-alert-footnote">
+        <p class="urgent-alert-footnote" data-i18n="urgentAlertFootnote">
           Explicit acknowledgment is required to dismiss this high-priority notice.
         </p>
       </div>
       <div class="urgent-alert-footer">
-        <button type="button" class="btn-urgent-primary-cta" id="btn-urgent-alert-action" style="display: none;">
+        <button type="button" class="btn-urgent-primary-cta" id="btn-urgent-alert-action" style="display: none;" data-i18n="btnSubmitNowUrgent">
           ⇪ Submit Now
         </button>
-        <button type="button" class="btn-acknowledge-urgent" id="btn-acknowledge-urgent-alert">
+        <button type="button" class="btn-acknowledge-urgent" id="btn-acknowledge-urgent-alert" data-i18n="btnAcknowledgeUrgent">
           ✓ Acknowledge / Mark as Read
         </button>
       </div>
@@ -1408,11 +1409,11 @@
   </div>
 
   <!-- SYSTEM B: FLOATING BOTTOM-RIGHT MESSENGER LAUNCHER WIDGET -->
-  <button type="button" id="floating-messenger-fab" class="floating-messenger-fab" aria-label="Open Messenger" title="Open Messenger" style="display: none;">
+  <button type="button" id="floating-messenger-fab" class="floating-messenger-fab" aria-label="Open Messenger" title="Open Messenger" data-i18n-aria-label="openMessengerAria" data-i18n-title="openMessengerAria" style="display: none;">
     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
     </svg>
-    <span class="floating-messenger-label">Chat</span>
+    <span class="floating-messenger-label" data-i18n="floatingChatLabel">Chat</span>
     <span class="floating-messenger-badge" id="floating-messenger-unread-badge" style="display: none;">0</span>
   </button>
 
@@ -1421,7 +1422,7 @@
     <div class="modal-card" style="max-width: 440px;">
       <div class="modal-header">
         <h3 data-i18n="forgotPasswordTitle">Password Help</h3>
-        <button type="button" class="modal-close-btn" id="forgot-password-modal-close">&times;</button>
+        <button type="button" class="modal-close-btn" id="forgot-password-modal-close" aria-label="Close" data-i18n-aria-label="closeBtn">&times;</button>
       </div>
       <div class="modal-body" style="padding: 24px;">
         <p id="forgot-password-contact-text" style="font-size: 14px; color: #0f172a; line-height: 1.55; margin: 0;"></p>
@@ -1437,7 +1438,7 @@
     <div class="modal-card" style="max-width: 440px;">
       <div class="modal-header">
         <h3 data-i18n="changePasswordTitle">Change Password</h3>
-        <button type="button" class="modal-close-btn" id="change-password-modal-close">&times;</button>
+        <button type="button" class="modal-close-btn" id="change-password-modal-close" aria-label="Close" data-i18n-aria-label="closeBtn">&times;</button>
       </div>
       <form id="change-password-form" onsubmit="return false;">
         <div class="modal-body" style="padding: 20px 24px; display: flex; flex-direction: column; gap: 14px;">
