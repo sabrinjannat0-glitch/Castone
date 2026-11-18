@@ -164,9 +164,12 @@ export const translations = {
     arcGuideSub: "Must be completed within 90 days of arrival in South Korea",
     submitMonthlyReportBtn: "Submit Monthly Report",
 
-    // General Fallbacks
+    // General Fallbacks & Sync Errors
     uploadSuccess: "Document uploaded successfully!",
-    somethingWrong: "Something went wrong. Please try again."
+    somethingWrong: "Something went wrong. Please try again.",
+    syncErrorTitle: "Sync Failed",
+    syncErrorMessage: "Could not sync with the server. Please check your connection and try again.",
+    retryBtn: "Retry"
   },
 
   ko: {
@@ -329,9 +332,12 @@ export const translations = {
     arcGuideSub: "대한민국 입국일로부터 90일 이내에 반드시 완료해야 합니다",
     submitMonthlyReportBtn: "월간 보고서 제출",
 
-    // General Fallbacks
+    // General Fallbacks & Sync Errors
     uploadSuccess: "서류가 성공적으로 업로드되었습니다!",
-    somethingWrong: "오류가 발생했습니다. 다시 시도해주세요."
+    somethingWrong: "오류가 발생했습니다. 다시 시도해주세요.",
+    syncErrorTitle: "동기화 실패",
+    syncErrorMessage: "서버와 동기화하지 못했습니다. 네트워크 연결을 확인한 후 다시 시도해주세요.",
+    retryBtn: "다시 시도"
   }
 };
 

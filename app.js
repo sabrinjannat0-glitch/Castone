@@ -1,7 +1,6 @@
 // ============================================================
 // KSU Compass — International Student Onboarding Portal
-// Dual-Engine Persistence (Firebase Cloud + Instant LocalStorage Mirror)
-// Combines the 8-Screen Layout with All Previous Plan Capabilities
+// Firestore Cloud Persistence (Source of Truth)
 // ============================================================
 
 import { auth, db } from "./firebase-init.js";
@@ -33,7 +32,6 @@ import { t, getLang, setLang, onLangChange, getTaskLabel } from "./i18n.js";
 // 1. CONSTANTS & GLOBAL STATE
 // ============================================================
 const CORE_TASKS = ["housing", "arc", "phone", "bank", "insurance", "lms", "library", "transport"];
-const STORAGE_PREFIX = "ksu_compass_v2_";
 const CYCLE_TOTAL_SESSIONS = 6;       // 6 reports/sessions across a 3-month cycle
 const CYCLE_MAX_MONTHS = 3;           // 3-month cycle structure
 const MONTH_MAX_SESSIONS = 2;         // 2 reports/sessions per month
@@ -49,6 +47,8 @@ let currentStudentMentorId = null;
 let isLoginInProgress = false;
 let passwordBannerDismissedThisSession = false;
 const scopedRosterCache = new Map();
+const acknowledgedUrgentIdsInMemory = new Set();
+const pushedUrgentIdsInMemory = new Set();
 
 // Admin cached state (Always starts empty / 0)
 let adminRosterStudents = [];
@@ -237,50 +237,6 @@ function createSafePdfBlobUrl(dataUrl) {
   }
 }
 
-function getLocalCollection(colName) {
-  try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + colName);
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
-}
-
-function stripHeavyInlineDataUrls(mapObj) {
-  const clone = {};
-  for (const [docKey, docVal] of Object.entries(mapObj || {})) {
-    if (docVal && Array.isArray(docVal.files)) {
-      clone[docKey] = {
-        ...docVal,
-        files: docVal.files.map((f, idx) => ({
-          fileId: f?.fileId || `legacy_${docKey}_s${idx + 1}`,
-          name: f?.name || `Session_${idx + 1}.pdf`,
-          type: f?.type || "application/pdf",
-          size: f?.size || 0,
-          uploadedAt: f?.uploadedAt || docVal.submittedAt || ""
-        }))
-      };
-    } else {
-      clone[docKey] = docVal;
-    }
-  }
-  return clone;
-}
-
-function setLocalCollection(colName, mapObj) {
-  try {
-    localStorage.setItem(STORAGE_PREFIX + colName, JSON.stringify(mapObj));
-  } catch (e) {
-    // If localStorage hits ~5MB browser quota (e.g. many PDFs), keep metadata intact while PDFs live permanently in IndexedDB
-    try {
-      const compactMap = stripHeavyInlineDataUrls(mapObj);
-      localStorage.setItem(STORAGE_PREFIX + colName, JSON.stringify(compactMap));
-    } catch (innerErr) {
-      console.warn("LocalStorage quota warning:", innerErr);
-    }
-  }
-}
-
 function cleanMentorRefValue(val) {
   const s = String(val || "").trim();
   if (!s) return "";
@@ -317,11 +273,9 @@ function isMessengerPairAuthorized(initiatorRole, initiatorId, recipientId, rost
       if (k && p) rosterByKey.set(String(k).toLowerCase(), p);
     });
   } else {
-    const localRoster = getLocalCollection("roster") || {};
-    const deletedRoster = getLocalCollection("roster_deleted") || {};
-    Object.entries(localRoster).forEach(([id, data]) => {
-      if (id && data && !deletedRoster[id]) {
-        rosterByKey.set(String(id).toLowerCase(), { ...data, _id: id });
+    [...adminRosterStudents, ...adminRosterMentors].forEach((p) => {
+      if (p && p._id) {
+        rosterByKey.set(String(p._id).toLowerCase(), p);
       }
     });
     scopedRosterCache.forEach((p, k) => {
@@ -388,90 +342,92 @@ function isChatChannelAuthorizedForCurrentSession(channelId, rosterArrayOrMap = 
   return isMessengerPairAuthorized(currentRole, currentUserId, otherKey, rosterArrayOrMap);
 }
 
-async function dbGetDoc(colName, docId) {
+function showSyncErrorToast(retryFn, customMessage = "") {
+  showToast(
+    t("syncErrorTitle"),
+    customMessage || t("syncErrorMessage"),
+    "error",
+    typeof retryFn === "function" ? { onRetry: retryFn } : {}
+  );
+}
+
+async function dbGetDoc(colName, docId, options = {}) {
   const key = String(docId);
   if (colName === "chats" && !isChatChannelAuthorizedForCurrentSession(key)) {
     return null;
   }
 
-  const localMap = getLocalCollection(colName);
-  let localData = localMap[key] || null;
-
   try {
     const snap = await getDoc(doc(db, colName, key));
-    if (snap.exists()) {
-      const cloudData = snap.data();
-      const merged = { ...(localData || {}), ...cloudData };
-      // Never allow a partial metadata update to wipe existing files array
-      if (Array.isArray(localData?.files) && localData.files.length > 0 && !Array.isArray(cloudData?.files)) {
-        merged.files = localData.files;
-      }
-      localMap[key] = merged;
-      setLocalCollection(colName, localMap);
-      if (colName === "roster") {
-        scopedRosterCache.set(key.toLowerCase(), { ...merged, _id: key.toLowerCase() });
-      }
-      return merged;
+    if (!snap.exists()) {
+      return null;
     }
+    const cloudData = snap.data() || {};
+    if (colName === "roster") {
+      scopedRosterCache.set(key.toLowerCase(), { ...cloudData, _id: key.toLowerCase() });
+    }
+    return cloudData;
   } catch (err) {
-    // Firestore permission-denied or offline: seamlessly use localData
+    if (!options?.silent) {
+      const retryFn = options?.onRetry || (() => dbGetDoc(colName, docId, options));
+      showSyncErrorToast(retryFn);
+    }
+    if (options?.rethrow) {
+      err._syncToastShown = true;
+      throw err;
+    }
+    return null;
   }
-  if (colName === "roster" && localData) {
-    scopedRosterCache.set(key.toLowerCase(), { ...localData, _id: key.toLowerCase() });
-  }
-  return localData;
 }
 
-async function dbGetAll(colName) {
-  const localMap = getLocalCollection(colName);
-  const deletedMap = getLocalCollection(colName + "_deleted");
-
+async function dbGetAll(colName, options = {}) {
   try {
     const snap = await getDocs(collection(db, colName));
+    let results = [];
     snap.forEach((docSnap) => {
       const id = docSnap.id;
-      if (!deletedMap[id]) {
-        const existingLocal = localMap[id] || {};
-        const cloudData = docSnap.data() || {};
-        const merged = { ...existingLocal, ...cloudData, _id: id };
-        // Preserve richer file entries if local had inline dataUrl or fileId metadata
-        if (Array.isArray(existingLocal.files) && Array.isArray(cloudData.files)) {
-          merged.files = cloudData.files.map((cf, i) => ({
-            ...(existingLocal.files[i] || {}),
-            ...cf,
-            dataUrl: cf.dataUrl || existingLocal.files[i]?.dataUrl
-          }));
-        }
-        localMap[id] = merged;
-        if (colName === "roster") {
-          scopedRosterCache.set(String(id).toLowerCase(), merged);
-        }
+      const cloudData = docSnap.data() || {};
+      const item = { ...cloudData, _id: id };
+      if (colName === "roster") {
+        scopedRosterCache.set(String(id).toLowerCase(), item);
       }
+      results.push(item);
     });
-    setLocalCollection(colName, localMap);
+
+    if (colName === "chats") {
+      results = results.filter((docItem) => isChatChannelAuthorizedForCurrentSession(docItem._id));
+    }
+
+    if (colName === "monthlyReports") {
+      await hydrateReportsWithVaultFiles(results);
+    }
+    return results;
   } catch (err) {
-    // Firestore rules blocked read: use localMap seamlessly
+    if (!options?.silent) {
+      const retryFn = options?.onRetry || (() => dbGetAll(colName, options));
+      showSyncErrorToast(retryFn);
+    }
+    if (options?.rethrow) {
+      err._syncToastShown = true;
+      throw err;
+    }
+    return [];
   }
-
-  let results = Object.entries(localMap)
-    .filter(([id]) => !deletedMap[id])
-    .map(([id, data]) => ({ ...data, _id: id }));
-
-  if (colName === "chats") {
-    results = results.filter((docItem) => isChatChannelAuthorizedForCurrentSession(docItem._id));
-  }
-
-  if (colName === "monthlyReports") {
-    await hydrateReportsWithVaultFiles(results);
-  }
-  return results;
 }
 
-async function dbQuery(colName, ...constraints) {
-  const localMap = getLocalCollection(colName);
-  const deletedMap = getLocalCollection(colName + "_deleted");
-  const cloudResults = [];
-  let cloudSucceeded = false;
+async function dbQuery(colName, ...args) {
+  let options = {};
+  let constraints = args;
+  if (
+    args.length > 0 &&
+    args[args.length - 1] &&
+    typeof args[args.length - 1] === "object" &&
+    !args[args.length - 1].type &&
+    ("onRetry" in args[args.length - 1] || "silent" in args[args.length - 1] || "rethrow" in args[args.length - 1])
+  ) {
+    options = args[args.length - 1];
+    constraints = args.slice(0, -1);
+  }
 
   try {
     const q =
@@ -479,56 +435,49 @@ async function dbQuery(colName, ...constraints) {
         ? query(collection(db, colName), ...constraints)
         : collection(db, colName);
     const snap = await getDocs(q);
-    cloudSucceeded = true;
+    let results = [];
     snap.forEach((docSnap) => {
       const id = docSnap.id;
-      if (!deletedMap[id]) {
-        const existingLocal = localMap[id] || {};
-        const cloudData = docSnap.data() || {};
-        const merged = { ...existingLocal, ...cloudData, _id: id };
-        if (Array.isArray(existingLocal.files) && Array.isArray(cloudData.files)) {
-          merged.files = cloudData.files.map((cf, i) => ({
-            ...(existingLocal.files[i] || {}),
-            ...cf,
-            dataUrl: cf.dataUrl || existingLocal.files[i]?.dataUrl
-          }));
-        }
-        localMap[id] = merged;
-        cloudResults.push(merged);
+      const cloudData = docSnap.data() || {};
+      const item = { ...cloudData, _id: id };
+      if (colName === "roster") {
+        scopedRosterCache.set(String(id).toLowerCase(), item);
       }
+      results.push(item);
     });
-    setLocalCollection(colName, localMap);
+
+    if (colName === "chats") {
+      results = results.filter((docItem) => isChatChannelAuthorizedForCurrentSession(docItem._id));
+    }
+
+    if (colName === "monthlyReports") {
+      await hydrateReportsWithVaultFiles(results);
+    }
+    return results;
   } catch (err) {
-    // Fallback to localMap when offline
+    if (!options?.silent) {
+      const retryFn = options?.onRetry || (() => dbQuery(colName, ...args));
+      showSyncErrorToast(retryFn);
+    }
+    if (options?.rethrow) {
+      err._syncToastShown = true;
+      throw err;
+    }
+    return [];
   }
-
-  let results = cloudSucceeded
-    ? cloudResults
-    : Object.entries(localMap)
-        .filter(([id]) => !deletedMap[id])
-        .map(([id, data]) => ({ ...data, _id: id }));
-
-  if (colName === "chats") {
-    results = results.filter((docItem) => isChatChannelAuthorizedForCurrentSession(docItem._id));
-  }
-
-  if (colName === "monthlyReports") {
-    await hydrateReportsWithVaultFiles(results);
-  }
-  return results;
 }
 
-async function loadScopedRosterDocsForCurrentUser() {
+async function loadScopedRosterDocsForCurrentUser(options = {}) {
   if (!currentRole) return [];
   if (currentRole === "admin") {
-    return await dbGetAll("roster");
+    return await dbGetAll("roster", options);
   }
 
   const myId = String(currentUserId || "").trim().toLowerCase();
   if (!myId) return [];
 
   if (currentRole === "student") {
-    const meDoc = await dbGetDoc("roster", myId);
+    const meDoc = await dbGetDoc("roster", myId, options);
     const docs = [];
     if (meDoc) {
       const meWithId = { ...meDoc, _id: myId };
@@ -536,7 +485,7 @@ async function loadScopedRosterDocsForCurrentUser() {
       docs.push(meWithId);
       const mentorId = cleanMentorRefValue(meDoc.mentorId).toLowerCase();
       if (mentorId) {
-        const mentorDoc = await dbGetDoc("roster", mentorId);
+        const mentorDoc = await dbGetDoc("roster", mentorId, options);
         if (mentorDoc) {
           const mentorWithId = { ...mentorDoc, _id: mentorId };
           scopedRosterCache.set(mentorId, mentorWithId);
@@ -549,8 +498,8 @@ async function loadScopedRosterDocsForCurrentUser() {
 
   if (currentRole === "mentor") {
     const [meDoc, assignedChecklists] = await Promise.all([
-      dbGetDoc("roster", myId),
-      dbQuery("checklists", where("mentorId", "==", myId))
+      dbGetDoc("roster", myId, options),
+      dbQuery("checklists", where("mentorId", "==", myId), options)
     ]);
     const docs = [];
     if (meDoc) {
@@ -567,7 +516,7 @@ async function loadScopedRosterDocsForCurrentUser() {
     );
     const studentDocs = await Promise.all(
       studentIds.map(async (stuId) => {
-        const sDoc = await dbGetDoc("roster", stuId);
+        const sDoc = await dbGetDoc("roster", stuId, options);
         if (!sDoc) return null;
         const sWithId = { ...sDoc, _id: stuId };
         scopedRosterCache.set(stuId, sWithId);
@@ -583,13 +532,24 @@ async function loadScopedRosterDocsForCurrentUser() {
   return [];
 }
 
-async function loadScopedChatsForCurrentUser() {
+async function loadScopedChatsForCurrentUser(options = {}) {
   const myKey = getMyChatKey();
   if (!myKey || !currentRole) return [];
-  return await dbQuery("chats", where("participants", "array-contains", myKey));
+  if (scopedRosterCache.size === 0) {
+    await loadScopedRosterDocsForCurrentUser(options);
+  }
+  if (currentRole === "student") {
+    const stuDoc = scopedRosterCache.get(myKey);
+    const mentorId = cleanMentorRefValue(stuDoc?.mentorId || currentStudentMentorId).toLowerCase();
+    if (!mentorId) return [];
+    const channelId = getChatChannelId(myKey, mentorId);
+    const chatDoc = await dbGetDoc("chats", channelId, options);
+    return chatDoc ? [{ ...chatDoc, _id: channelId }] : [];
+  }
+  return await dbQuery("chats", where("participants", "array-contains", myKey), options);
 }
 
-async function dbSetDoc(colName, docId, data, merge = true) {
+async function dbSetDoc(colName, docId, data, merge = true, options = {}) {
   const key = String(docId);
   if (colName === "chats") {
     if (!isChatChannelAuthorizedForCurrentSession(key)) {
@@ -606,23 +566,6 @@ async function dbSetDoc(colName, docId, data, merge = true) {
       }
     }
   }
-
-  const localMap = getLocalCollection(colName);
-  const deletedMap = getLocalCollection(colName + "_deleted");
-  if (deletedMap[key]) {
-    delete deletedMap[key];
-    setLocalCollection(colName + "_deleted", deletedMap);
-  }
-
-  const prev = localMap[key] || {};
-  const mergedRecord = merge ? { ...prev, ...data } : { ...data };
-  // Strict safeguard: partial updates (like admin review remarks) never overwrite stored files
-  if (merge && data.files === undefined && Array.isArray(prev.files)) {
-    mergedRecord.files = prev.files;
-  }
-
-  localMap[key] = mergedRecord;
-  setLocalCollection(colName, localMap);
 
   try {
     // Keep Firestore document under 1 MiB limit by stripping oversized inline dataUrls from metadata doc when backed up in vault
@@ -643,26 +586,38 @@ async function dbSetDoc(colName, docId, data, merge = true) {
       }
     }
     await setDoc(doc(db, colName, key), cloudPayload, { merge });
+    if (colName === "roster") {
+      const prev = scopedRosterCache.get(key.toLowerCase()) || {};
+      const nextRec = merge
+        ? { ...prev, ...cloudPayload, _id: key.toLowerCase() }
+        : { ...cloudPayload, _id: key.toLowerCase() };
+      scopedRosterCache.set(key.toLowerCase(), nextRec);
+    }
+    return cloudPayload;
   } catch (err) {
-    // Saved in local mirror + IndexedDB vault; continue without failing UI operation
+    if (!options?.silent) {
+      const retryFn = options?.onRetry || (() => dbSetDoc(colName, docId, data, merge, options));
+      showSyncErrorToast(retryFn);
+    }
+    err._syncToastShown = true;
+    throw err;
   }
-  return localMap[key];
 }
 
-async function dbDeleteDoc(colName, docId) {
+async function dbDeleteDoc(colName, docId, options = {}) {
   const key = String(docId);
-  const localMap = getLocalCollection(colName);
-  delete localMap[key];
-  setLocalCollection(colName, localMap);
-
-  const deletedMap = getLocalCollection(colName + "_deleted");
-  deletedMap[key] = true;
-  setLocalCollection(colName + "_deleted", deletedMap);
-
   try {
     await deleteDoc(doc(db, colName, key));
+    if (colName === "roster") {
+      scopedRosterCache.delete(key.toLowerCase());
+    }
   } catch (err) {
-    // Deleted locally even if Firestore rules block delete
+    if (!options?.silent) {
+      const retryFn = options?.onRetry || (() => dbDeleteDoc(colName, docId, options));
+      showSyncErrorToast(retryFn);
+    }
+    err._syncToastShown = true;
+    throw err;
   }
 }
 
@@ -681,9 +636,10 @@ const checklistCard = document.getElementById("checklist-card");
 const mentorDashboardCard = document.getElementById("mentor-dashboard-card");
 const adminDashboardCard = document.getElementById("admin-dashboard-card");
 
-export function showToast(title, message = "", type = "info") {
+export function showToast(title, message = "", type = "info", options = {}) {
   const container = document.getElementById("toast-container");
   if (!container) return;
+  const { onRetry = null, durationMs = onRetry ? 10000 : 4000 } = options || {};
   const toast = document.createElement("div");
   toast.className = "toast-item";
   const borderColors = {
@@ -697,14 +653,32 @@ export function showToast(title, message = "", type = "info") {
     <div class="toast-content">
       <h5>${escapeHtml(title)}</h5>
       ${message ? `<p>${escapeHtml(message)}</p>` : ""}
+      ${
+        typeof onRetry === "function"
+          ? `<div class="toast-actions">
+               <button type="button" class="toast-retry-btn">${escapeHtml(t("retryBtn"))}</button>
+             </div>`
+          : ""
+      }
     </div>
   `;
+  if (typeof onRetry === "function") {
+    const retryBtn = toast.querySelector(".toast-retry-btn");
+    retryBtn?.addEventListener("click", async () => {
+      retryBtn.disabled = true;
+      toast.remove();
+      try {
+        await onRetry();
+      } catch (_) {}
+    });
+  }
   container.appendChild(toast);
   setTimeout(() => {
+    if (!toast.isConnected) return;
     toast.style.opacity = "0";
     toast.style.transition = "opacity 0.25s ease";
     setTimeout(() => toast.remove(), 260);
-  }, 4000);
+  }, durationMs);
 }
 
 function escapeHtml(str) {
@@ -782,8 +756,8 @@ function buildDefaultArcDeadlineLocal() {
   return `${yyyy}-${mm}-${dd}T17:00`;
 }
 
-async function loadPortalConfig() {
-  const stored = await dbGetDoc("settings", "portalConfig");
+async function loadPortalConfig(options = {}) {
+  const stored = await dbGetDoc("settings", "portalConfig", options);
   if (stored && stored.arcDeadline) {
     const storedActiveMonths =
       stored.activeSemesterMonths && typeof stored.activeSemesterMonths === "object"
@@ -823,15 +797,12 @@ async function loadPortalConfig() {
     ...initialConfig.activeSemesterMonths,
     ...adminActiveMonthsBySemester
   };
-  if (currentRole === "admin") {
-    await dbSetDoc("settings", "portalConfig", initialConfig);
-  }
   portalConfigCache = initialConfig;
   return portalConfigCache;
 }
 
-async function savePortalConfig(partialUpdate) {
-  const base = portalConfigCache || (await loadPortalConfig());
+async function savePortalConfig(partialUpdate, options = {}) {
+  const base = portalConfigCache || (await loadPortalConfig({ silent: true }));
   const next = {
     ...base,
     ...partialUpdate,
@@ -851,7 +822,8 @@ async function savePortalConfig(partialUpdate) {
     updatedAt: new Date().toISOString()
   };
   delete next.monthLabels;
-  await dbSetDoc("settings", "portalConfig", next, false);
+  const retryFn = options?.onRetry || (() => savePortalConfig(partialUpdate, options));
+  await dbSetDoc("settings", "portalConfig", next, false, { ...options, onRetry: retryFn });
   portalConfigCache = next;
   return next;
 }
@@ -1559,13 +1531,15 @@ document.getElementById("change-password-form")?.addEventListener("submit", asyn
     await updatePassword(user, newPw);
 
     if ((currentRole === "student" || currentRole === "mentor") && currentUserId) {
-      await setDoc(
-        doc(db, "userSettings", String(currentUserId).toLowerCase()),
+      const uidKey = String(currentUserId).toLowerCase();
+      await dbSetDoc(
+        "userSettings",
+        uidKey,
         {
           passwordChanged: true,
           updatedAt: new Date().toISOString()
         },
-        { merge: true }
+        true
       );
     }
 
@@ -1763,6 +1737,8 @@ function clearAllCachedUserData() {
   currentStudentMentorId = null;
   passwordBannerDismissedThisSession = false;
   scopedRosterCache.clear();
+  acknowledgedUrgentIdsInMemory.clear();
+  pushedUrgentIdsInMemory.clear();
   adminRosterStudents = [];
   adminRosterMentors = [];
   adminChecklistsMap = {};
@@ -1916,21 +1892,37 @@ async function loadStudentDashboard(studentId, studentName) {
     if (cb) {
       cb.checked = isDone;
       cb.onchange = async () => {
-        tasks[taskId] = cb.checked;
-        row.classList.toggle("completed", cb.checked);
-        const payload = {
-          name: studentName,
-          mentorId: studentMentorId,
-          tasks,
-          taskDocs,
-          updatedAt: new Date().toISOString()
+        const desiredChecked = cb.checked;
+        const prevChecked = Boolean(tasks[taskId]);
+        cb.checked = prevChecked;
+        row.classList.toggle("completed", prevChecked);
+
+        const performTaskToggle = async () => {
+          const nextTasks = { ...tasks, [taskId]: desiredChecked };
+          const payload = {
+            name: studentName,
+            mentorId: studentMentorId,
+            tasks: nextTasks,
+            taskDocs,
+            updatedAt: new Date().toISOString()
+          };
+          if (checklistDoc?.role !== undefined) payload.role = checklistDoc.role;
+          if (checklistDoc?.createdAt !== undefined) payload.createdAt = checklistDoc.createdAt;
+          try {
+            await dbSetDoc("checklists", studentId, payload, true, { onRetry: performTaskToggle });
+            tasks[taskId] = desiredChecked;
+            cb.checked = desiredChecked;
+            row.classList.toggle("completed", desiredChecked);
+            updateStudentProgressUI(tasks);
+            renderStudentArcDeadlineAndBanner(tasks, taskDocs, portalConfigCache || portalConfig);
+            filterStudentTasks();
+          } catch (_) {
+            cb.checked = prevChecked;
+            row.classList.toggle("completed", prevChecked);
+          }
         };
-        if (checklistDoc?.role !== undefined) payload.role = checklistDoc.role;
-        if (checklistDoc?.createdAt !== undefined) payload.createdAt = checklistDoc.createdAt;
-        await dbSetDoc("checklists", studentId, payload);
-        updateStudentProgressUI(tasks);
-        renderStudentArcDeadlineAndBanner(tasks, taskDocs, portalConfigCache || portalConfig);
-        filterStudentTasks();
+
+        await performTaskToggle();
       };
     }
 
@@ -2140,54 +2132,60 @@ document.getElementById("task-doc-input")?.addEventListener("change", async (e) 
     const taskId = pendingUploadTaskId;
     pendingUploadTaskId = null;
 
-    const [rosterDoc, existingDoc] = await Promise.all([
-      dbGetDoc("roster", currentUserId),
-      dbGetDoc("checklists", currentUserId)
-    ]);
-    const existing = existingDoc || {
-      name: currentUserName,
-      tasks: {},
-      taskDocs: {}
+    const performProofUpload = async () => {
+      const [rosterDoc, existingDoc] = await Promise.all([
+        dbGetDoc("roster", currentUserId),
+        dbGetDoc("checklists", currentUserId)
+      ]);
+      const existing = existingDoc || {
+        name: currentUserName,
+        tasks: {},
+        taskDocs: {}
+      };
+      const tasks = { ...(existing.tasks || {}) };
+      const taskDocs = { ...(existing.taskDocs || {}) };
+      const mentorIdVal = normalizeMentorIdValue(
+        existingDoc?.mentorId !== undefined ? existingDoc.mentorId : rosterDoc?.mentorId
+      );
+
+      taskDocs[taskId] = {
+        fileName: file.name,
+        fileType: file.type || "application/octet-stream",
+        dataUrl,
+        status: "pending",
+        note: "",
+        targetReviewer: taskId === "arc" ? "admin" : "mentor",
+        uploadedAt: new Date().toISOString()
+      };
+      tasks[taskId] = true;
+
+      const payload = {
+        name: currentUserName,
+        mentorId: mentorIdVal,
+        tasks,
+        taskDocs,
+        updatedAt: new Date().toISOString()
+      };
+      if (existingDoc?.role !== undefined) payload.role = existingDoc.role;
+      if (existingDoc?.createdAt !== undefined) payload.createdAt = existingDoc.createdAt;
+      await dbSetDoc("checklists", currentUserId, payload, true, { onRetry: performProofUpload });
+
+      showToast(
+        t("uploadSuccess"),
+        taskId === "arc"
+          ? "Your ARC proof was sent directly to the International Office (Admin) for review."
+          : "Your proof document has been uploaded.",
+        "success"
+      );
+
+      await loadStudentDashboard(currentUserId, currentUserName);
     };
-    const tasks = existing.tasks || {};
-    const taskDocs = existing.taskDocs || {};
-    const mentorIdVal = normalizeMentorIdValue(
-      existingDoc?.mentorId !== undefined ? existingDoc.mentorId : rosterDoc?.mentorId
-    );
 
-    taskDocs[taskId] = {
-      fileName: file.name,
-      fileType: file.type || "application/octet-stream",
-      dataUrl,
-      status: "pending",
-      note: "",
-      targetReviewer: taskId === "arc" ? "admin" : "mentor",
-      uploadedAt: new Date().toISOString()
-    };
-    tasks[taskId] = true;
-
-    const payload = {
-      name: currentUserName,
-      mentorId: mentorIdVal,
-      tasks,
-      taskDocs,
-      updatedAt: new Date().toISOString()
-    };
-    if (existingDoc?.role !== undefined) payload.role = existingDoc.role;
-    if (existingDoc?.createdAt !== undefined) payload.createdAt = existingDoc.createdAt;
-    await dbSetDoc("checklists", currentUserId, payload);
-
-    showToast(
-      t("uploadSuccess"),
-      taskId === "arc"
-        ? "Your ARC proof was sent directly to the International Office (Admin) for review."
-        : "Your proof document has been uploaded.",
-      "success"
-    );
-
-    await loadStudentDashboard(currentUserId, currentUserName);
+    await performProofUpload();
   } catch (err) {
-    showToast("Upload Error", err.message || "Failed to read file.", "error");
+    if (!err?._syncToastShown) {
+      showToast("Upload Error", err.message || "Failed to read file.", "error");
+    }
   }
 });
 
@@ -3034,41 +3032,48 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
     const sessions = encodedFiles.length; // Always 2
     const reportId = `rep_${myIdLower}_${month}_${nowTs}_${randSuffix}`;
 
-    await dbSetDoc(
-      "monthlyReports",
-      reportId,
-      {
-        mentorId: myIdLower,
-        mentorName: currentUserName,
-        month,
-        sessions,
-        title,
-        notes,
-        concerns,
-        files: encodedFiles,
-        status: "pending",
-        adminRemarks: "",
-        submittedAt: nowIso
-      },
-      false
-    );
+    const performReportSubmit = async () => {
+      await dbSetDoc(
+        "monthlyReports",
+        reportId,
+        {
+          mentorId: myIdLower,
+          mentorName: currentUserName,
+          month,
+          sessions,
+          title,
+          notes,
+          concerns,
+          files: encodedFiles,
+          status: "pending",
+          adminRemarks: "",
+          submittedAt: nowIso
+        },
+        false,
+        { onRetry: performReportSubmit }
+      );
 
-    document.getElementById("monthly-report-form")?.reset();
-    const sessionsInput = document.getElementById("report-sessions-input");
-    if (sessionsInput) sessionsInput.value = "0";
+      document.getElementById("monthly-report-form")?.reset();
+      const sessionsInput = document.getElementById("report-sessions-input");
+      if (sessionsInput) sessionsInput.value = "0";
 
-    const modal = document.getElementById("monthly-report-modal");
-    if (modal) modal.style.display = "none";
+      const modal = document.getElementById("monthly-report-modal");
+      if (modal) modal.style.display = "none";
 
-    const newTotal = existingTotalSessions + sessions;
-    showToast(
-      "Both Session PDFs Saved",
-      `Submitted ${sessions} session PDFs for ${getMonthGroupDisplayName(month)} (${newTotal} / ${CYCLE_TOTAL_SESSIONS} Total Sessions Completed).`,
-      "success"
-    );
-    await loadMentorDashboard(currentUserId, currentUserName);
+      const newTotal = existingTotalSessions + sessions;
+      showToast(
+        "Both Session PDFs Saved",
+        `Submitted ${sessions} session PDFs for ${getMonthGroupDisplayName(month)} (${newTotal} / ${CYCLE_TOTAL_SESSIONS} Total Sessions Completed).`,
+        "success"
+      );
+      await loadMentorDashboard(currentUserId, currentUserName);
+    };
+
+    await performReportSubmit();
   } catch (err) {
-    showToast("Submission Failed", err.message || "Could not submit report.", "error");
+    if (!err?._syncToastShown) {
+      showToast("Submission Failed", err.message || "Could not submit report.", "error");
+    }
   } finally {
     await refreshMentorReportModalState();
   }
@@ -3509,7 +3514,9 @@ document.getElementById("btn-broadcast-arc-warning")?.addEventListener("click", 
     }
     if (confirmModal) confirmModal.style.display = "flex";
   } catch (err) {
-    showToast("Failed to Send Reminder", err.message || "Please try again.", "error");
+    if (!err?._syncToastShown) {
+      showToast("Failed to Send Reminder", err.message || "Please try again.", "error");
+    }
   } finally {
     isSendingArcWarning = false;
     updateAdminArcWarningStatusUI();
@@ -3943,13 +3950,21 @@ function renderDetailedRosterTable() {
 
   // Bind Inline Mentor Assignment Dropdown
   listEl.querySelectorAll(".inline-mentor-assign").forEach((sel) => {
+    const initialMentorId = normalizeMentorIdValue(sel.value);
     sel.addEventListener("change", async () => {
       const sId = String(sel.getAttribute("data-stu-id") || "").trim().toLowerCase();
       const newMentorId = normalizeMentorIdValue(sel.value);
-      await dbSetDoc("roster", sId, { mentorId: newMentorId });
-      await dbSetDoc("checklists", sId, { mentorId: newMentorId });
-      await loadAdminDashboard();
-      showToast("Mentor Updated", `Updated mentor assignment for ${sId}.`, "success");
+      const performMentorAssign = async () => {
+        try {
+          await dbSetDoc("roster", sId, { mentorId: newMentorId }, true, { onRetry: performMentorAssign });
+          await dbSetDoc("checklists", sId, { mentorId: newMentorId }, true, { onRetry: performMentorAssign });
+          await loadAdminDashboard();
+          showToast("Mentor Updated", `Updated mentor assignment for ${sId}.`, "success");
+        } catch (_) {
+          sel.value = initialMentorId;
+        }
+      };
+      await performMentorAssign();
     });
   });
 
@@ -3969,21 +3984,26 @@ function renderDetailedRosterTable() {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-delete-person");
       const idLower = String(id || "").toLowerCase();
-      await dbDeleteDoc("roster", id);
-      await dbDeleteDoc("checklists", id);
+      const performDeletePerson = async () => {
+        try {
+          await dbDeleteDoc("roster", id, { onRetry: performDeletePerson });
+          await dbDeleteDoc("checklists", id, { onRetry: performDeletePerson });
 
-      // If a mentor was deleted, clear mentorId on any students previously assigned to them
-      const affectedStudents = adminRosterStudents.filter(
-        (s) => String(s.mentorId || "").toLowerCase() === idLower
-      );
-      for (const stu of affectedStudents) {
-        await dbSetDoc("roster", stu._id, { mentorId: "" });
-        await dbSetDoc("checklists", stu._id, { mentorId: "" });
-      }
+          // If a mentor was deleted, clear mentorId on any students previously assigned to them
+          const affectedStudents = adminRosterStudents.filter(
+            (s) => String(s.mentorId || "").toLowerCase() === idLower
+          );
+          for (const stu of affectedStudents) {
+            await dbSetDoc("roster", stu._id, { mentorId: "" }, true, { onRetry: performDeletePerson });
+            await dbSetDoc("checklists", stu._id, { mentorId: "" }, true, { onRetry: performDeletePerson });
+          }
 
-      selectedRosterIds.delete(id);
-      await loadAdminDashboard();
-      showToast(t("deleteSuccess"), `Removed ${id} from roster.`, "info");
+          selectedRosterIds.delete(id);
+          await loadAdminDashboard();
+          showToast(t("deleteSuccess"), `Removed ${id} from roster.`, "info");
+        } catch (_) {}
+      };
+      await performDeletePerson();
     });
   });
 }
@@ -4008,26 +4028,32 @@ document.getElementById("btn-delete-selected-students")?.addEventListener("click
   const ids = Array.from(selectedRosterIds);
   if (ids.length === 0) return;
 
-  const deletedLowerSet = new Set(ids.map((id) => String(id || "").toLowerCase()));
-  for (const id of ids) {
-    await dbDeleteDoc("roster", id);
-    await dbDeleteDoc("checklists", id);
-  }
+  const performBatchDelete = async () => {
+    try {
+      const deletedLowerSet = new Set(ids.map((id) => String(id || "").toLowerCase()));
+      for (const id of ids) {
+        await dbDeleteDoc("roster", id, { onRetry: performBatchDelete });
+        await dbDeleteDoc("checklists", id, { onRetry: performBatchDelete });
+      }
 
-  // Unassign any remaining students who were assigned to a deleted mentor
-  const affectedStudents = adminRosterStudents.filter(
-    (s) =>
-      !deletedLowerSet.has(String(s._id || "").toLowerCase()) &&
-      deletedLowerSet.has(String(s.mentorId || "").toLowerCase())
-  );
-  for (const stu of affectedStudents) {
-    await dbSetDoc("roster", stu._id, { mentorId: "" });
-    await dbSetDoc("checklists", stu._id, { mentorId: "" });
-  }
+      // Unassign any remaining students who were assigned to a deleted mentor
+      const affectedStudents = adminRosterStudents.filter(
+        (s) =>
+          !deletedLowerSet.has(String(s._id || "").toLowerCase()) &&
+          deletedLowerSet.has(String(s.mentorId || "").toLowerCase())
+      );
+      for (const stu of affectedStudents) {
+        await dbSetDoc("roster", stu._id, { mentorId: "" }, true, { onRetry: performBatchDelete });
+        await dbSetDoc("checklists", stu._id, { mentorId: "" }, true, { onRetry: performBatchDelete });
+      }
 
-  selectedRosterIds.clear();
-  await loadAdminDashboard();
-  showToast(t("deleteSelectedSuccess", { count: ids.length }), "", "success");
+      selectedRosterIds.clear();
+      await loadAdminDashboard();
+      showToast(t("deleteSelectedSuccess", { count: ids.length }), "", "success");
+    } catch (_) {}
+  };
+
+  await performBatchDelete();
 });
 
 // ---------- INTERACTIVE NEEDS ATTENTION ROWS ----------
@@ -4129,41 +4155,53 @@ document.getElementById("add-person-form")?.addEventListener("submit", async (e)
     createdAt: nowIso
   };
 
-  await dbSetDoc("roster", userId, record);
-  if (role === "student") {
-    const existingCl = await dbGetDoc("checklists", userId);
-    if (!existingCl) {
-      await dbSetDoc("checklists", userId, {
-        name,
-        role: "student",
-        mentorId,
-        tasks: {},
-        taskDocs: {},
-        createdAt: nowIso
-      });
-    } else {
-      await dbSetDoc("checklists", userId, { mentorId });
-    }
-  }
+  const performAddPerson = async () => {
+    try {
+      await dbSetDoc("roster", userId, record, true, { onRetry: performAddPerson });
+      if (role === "student") {
+        const existingCl = await dbGetDoc("checklists", userId);
+        if (!existingCl) {
+          await dbSetDoc(
+            "checklists",
+            userId,
+            {
+              name,
+              role: "student",
+              mentorId,
+              tasks: {},
+              taskDocs: {},
+              createdAt: nowIso
+            },
+            true,
+            { onRetry: performAddPerson }
+          );
+        } else {
+          await dbSetDoc("checklists", userId, { mentorId }, true, { onRetry: performAddPerson });
+        }
+      }
 
-  document.getElementById("add-person-form")?.reset();
-  const modal = document.getElementById("add-person-modal");
-  if (modal) modal.style.display = "none";
+      document.getElementById("add-person-form")?.reset();
+      const modal = document.getElementById("add-person-modal");
+      if (modal) modal.style.display = "none";
 
-  activePeopleTab = role === "mentor" ? "mentors" : "students";
-  await loadAdminDashboard();
+      activePeopleTab = role === "mentor" ? "mentors" : "students";
+      await loadAdminDashboard();
 
-  if (deptWarningMsg) {
-    showToast("Department Mismatch Warning", deptWarningMsg, "warning");
-  } else {
-    showToast(
-      `Added ${role === "mentor" ? "Mentor" : "Student"}: ${name}`,
-      `ID: ${userId}${department ? ` · Dept: ${department}` : ""}${
-        role === "student" ? ` · Mentor: ${mentorId || "Unassigned"}` : ""
-      }`,
-      "success"
-    );
-  }
+      if (deptWarningMsg) {
+        showToast("Department Mismatch Warning", deptWarningMsg, "warning");
+      } else {
+        showToast(
+          `Added ${role === "mentor" ? "Mentor" : "Student"}: ${name}`,
+          `ID: ${userId}${department ? ` · Dept: ${department}` : ""}${
+            role === "student" ? ` · Mentor: ${mentorId || "Unassigned"}` : ""
+          }`,
+          "success"
+        );
+      }
+    } catch (_) {}
+  };
+
+  await performAddPerson();
 });
 
 // ---------- DUAL-ROLE CSV IMPORT (STUDENTS | MENTORS), HEADER AUTO-DETECTION & DEPARTMENT ROUND-ROBIN ----------
@@ -4771,7 +4809,9 @@ async function processRosterCsvFile(file) {
       showToast("CSV Import Complete", summary.confirmationMessage, "success");
     }
   } catch (err) {
-    showToast("CSV Import Error", err.message || "Failed to parse CSV file.", "error");
+    if (!err?._syncToastShown) {
+      showToast("CSV Import Error", err.message || "Failed to parse CSV file.", "error");
+    }
   }
 }
 
@@ -5560,7 +5600,9 @@ async function dispatchWarningToUnsubmittedMentors(monthKey) {
     }
     if (confirmModal) confirmModal.style.display = "flex";
   } catch (err) {
-    showToast("Failed to Send Warning", err.message || "Please try again.", "error");
+    if (!err?._syncToastShown) {
+      showToast("Failed to Send Warning", err.message || "Please try again.", "error");
+    }
   } finally {
     isSendingMentorReportWarning = false;
     renderAdminMonthlyReports();
@@ -5887,22 +5929,28 @@ async function openMentorMonthSubmissionModal(mentorId, monthKey) {
   document.getElementById("btn-approve-report")?.addEventListener("click", async () => {
     const remarks = (document.getElementById("admin-report-remarks-input")?.value || "").trim();
     const reviewedAt = new Date().toISOString();
-    // Update review metadata on this month's report docs WITHOUT ever touching or overwriting `files`
-    for (const rep of agg.reports) {
-      await dbSetDoc(
-        "monthlyReports",
-        rep._id,
-        {
-          status: "reviewed",
-          adminRemarks: remarks,
-          reviewedAt
-        },
-        true
-      );
-    }
-    await loadAdminDashboard();
-    await openMentorMonthSubmissionModal(mentorObj.id, monthKey);
-    showToast("Month Submission Reviewed", `Saved remarks for ${mentorObj.name} (${groupName}).`, "success");
+    const performReportApprove = async () => {
+      try {
+        // Update review metadata on this month's report docs WITHOUT ever touching or overwriting `files`
+        for (const rep of agg.reports) {
+          await dbSetDoc(
+            "monthlyReports",
+            rep._id,
+            {
+              status: "reviewed",
+              adminRemarks: remarks,
+              reviewedAt
+            },
+            true,
+            { onRetry: performReportApprove }
+          );
+        }
+        await loadAdminDashboard();
+        await openMentorMonthSubmissionModal(mentorObj.id, monthKey);
+        showToast("Month Submission Reviewed", `Saved remarks for ${mentorObj.name} (${groupName}).`, "success");
+      } catch (_) {}
+    };
+    await performReportApprove();
   });
 }
 
@@ -6015,23 +6063,31 @@ document.getElementById("btn-save-arc-deadline")?.addEventListener("click", asyn
 
   const rawCustomMsg = (msgInput?.value || "").trim() || DEFAULT_ARC_BANNER_TEMPLATE;
 
-  const saveBtn = document.getElementById("btn-save-arc-deadline");
-  if (saveBtn) saveBtn.disabled = true;
-  try {
-    await savePortalConfig({
-      arcDeadline: rawVal,
-      arcCustomMessage: rawCustomMsg
-    });
-    const info = computeArcDeadlineInfo(rawVal, rawCustomMsg);
-    renderAdminAll();
-    showToast(
-      "ARC Settings Saved",
-      `Due: ${info.formattedDue} (${info.daysRemaining}d left). Custom banner text & deadline updated.`,
-      "success"
-    );
-  } finally {
-    if (saveBtn) saveBtn.disabled = false;
-  }
+  const performSaveArcDeadline = async () => {
+    const saveBtn = document.getElementById("btn-save-arc-deadline");
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      await savePortalConfig(
+        {
+          arcDeadline: rawVal,
+          arcCustomMessage: rawCustomMsg
+        },
+        { onRetry: performSaveArcDeadline }
+      );
+      const info = computeArcDeadlineInfo(rawVal, rawCustomMsg);
+      renderAdminAll();
+      showToast(
+        "ARC Settings Saved",
+        `Due: ${info.formattedDue} (${info.daysRemaining}d left). Custom banner text & deadline updated.`,
+        "success"
+      );
+    } catch (_) {
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  };
+
+  await performSaveArcDeadline();
 });
 
 // ---------- CAMPUS ANNOUNCEMENTS & BROADCAST SYSTEM ----------
@@ -6043,22 +6099,36 @@ document.getElementById("admin-announcement-form")?.addEventListener("submit", a
   if (!title || !body) return;
 
   const annId = `ann_${Date.now()}`;
-  await dbSetDoc("announcements", annId, {
-    title,
-    category,
-    body,
-    createdAt: new Date().toISOString()
-  });
+  const createdAt = new Date().toISOString();
 
-  document.getElementById("admin-announcement-form")?.reset();
-  await loadAdminDashboard();
-  showToast(
-    "Announcement Posted",
-    category === "Immigration"
-      ? "Immigration / ARC notice posted exclusively to Students (hidden from Mentors)."
-      : "Students and mentors can now see this notice.",
-    "success"
-  );
+  const performPostAnnouncement = async () => {
+    try {
+      await dbSetDoc(
+        "announcements",
+        annId,
+        {
+          title,
+          category,
+          body,
+          createdAt
+        },
+        true,
+        { onRetry: performPostAnnouncement }
+      );
+
+      document.getElementById("admin-announcement-form")?.reset();
+      await loadAdminDashboard();
+      showToast(
+        "Announcement Posted",
+        category === "Immigration"
+          ? "Immigration / ARC notice posted exclusively to Students (hidden from Mentors)."
+          : "Students and mentors can now see this notice.",
+        "success"
+      );
+    } catch (_) {}
+  };
+
+  await performPostAnnouncement();
 });
 
 function renderAdminAnnouncements() {
@@ -6097,9 +6167,14 @@ function renderAdminAnnouncements() {
   listEl.querySelectorAll("[data-del-ann]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-del-ann");
-      await dbDeleteDoc("announcements", id);
-      await loadAdminDashboard();
-      showToast("Announcement Removed", "", "info");
+      const performDeleteAnn = async () => {
+        try {
+          await dbDeleteDoc("announcements", id, { onRetry: performDeleteAnn });
+          await loadAdminDashboard();
+          showToast("Announcement Removed", "", "info");
+        } catch (_) {}
+      };
+      await performDeleteAnn();
     });
   });
 }
@@ -6273,35 +6348,49 @@ function openDocumentModal({ studentId, studentName, taskId, docInfo, viewerRole
 });
 
 async function updateDocumentReviewStatus(studentId, taskId, newStatus, note) {
-  const cl = (await dbGetDoc("checklists", studentId)) || { tasks: {}, taskDocs: {} };
-  const tasks = cl.tasks || {};
-  const taskDocs = cl.taskDocs || {};
+  const performReviewUpdate = async () => {
+    try {
+      const cl = (await dbGetDoc("checklists", studentId)) || { tasks: {}, taskDocs: {} };
+      const tasks = { ...(cl.tasks || {}) };
+      const taskDocs = { ...(cl.taskDocs || {}) };
 
-  if (!taskDocs[taskId]) return;
-  taskDocs[taskId].status = newStatus;
-  taskDocs[taskId].note = note || "";
-  taskDocs[taskId].reviewedAt = new Date().toISOString();
-  tasks[taskId] = newStatus === "approved";
+      if (!taskDocs[taskId]) return;
+      taskDocs[taskId] = {
+        ...taskDocs[taskId],
+        status: newStatus,
+        note: note || "",
+        reviewedAt: new Date().toISOString()
+      };
+      tasks[taskId] = newStatus === "approved";
 
-  await dbSetDoc("checklists", studentId, {
-    ...cl,
-    tasks,
-    taskDocs,
-    updatedAt: new Date().toISOString()
-  });
+      await dbSetDoc(
+        "checklists",
+        studentId,
+        {
+          tasks,
+          taskDocs,
+          updatedAt: new Date().toISOString()
+        },
+        true,
+        { onRetry: performReviewUpdate }
+      );
 
-  showToast(
-    newStatus === "approved" ? "Document Approved" : "Document Rejected",
-    `Updated ${getTaskLabel(taskId)} for ${studentId}.`,
-    newStatus === "approved" ? "success" : "warning"
-  );
+      showToast(
+        newStatus === "approved" ? "Document Approved" : "Document Rejected",
+        `Updated ${getTaskLabel(taskId)} for ${studentId}.`,
+        newStatus === "approved" ? "success" : "warning"
+      );
 
-  if (currentRole === "admin") await loadAdminDashboard();
-  if (currentRole === "mentor") await loadMentorDashboard(currentUserId, currentUserName);
+      if (currentRole === "admin") await loadAdminDashboard();
+      if (currentRole === "mentor") await loadMentorDashboard(currentUserId, currentUserName);
+    } catch (_) {}
+  };
+
+  await performReviewUpdate();
 }
 
 // ============================================================
-// 10. LIVE 1:1 CHAT & BELL NOTIFICATION SYSTEM (DUAL-ENGINE)
+// 10. LIVE 1:1 CHAT & BELL NOTIFICATION SYSTEM
 // ============================================================
 let knownUnreadMsgSignatures = new Set();
 
@@ -6338,10 +6427,16 @@ async function markChannelMessagesAsRead(channelId) {
   });
 
   if (changed) {
-    await dbSetDoc("chats", channelId, {
-      ...chatDoc,
-      messages: updatedMessages
-    });
+    await dbSetDoc(
+      "chats",
+      channelId,
+      {
+        ...chatDoc,
+        messages: updatedMessages
+      },
+      true,
+      { onRetry: () => markChannelMessagesAsRead(channelId) }
+    );
   }
 }
 
@@ -6351,47 +6446,22 @@ async function markChannelMessagesAsRead(channelId) {
 let activeUrgentAlertQueue = [];
 let currentDisplayedUrgentAlert = null;
 
-function getUrgentStorageSuffix() {
-  const uid = String(currentRole === "admin" ? "admin" : currentUserId || "anon").toLowerCase();
-  return `${currentRole || "none"}_${uid}`;
-}
-
 function getLocalAcknowledgedUrgentIds() {
-  try {
-    const raw = localStorage.getItem(`${STORAGE_PREFIX}ack_urgent_${getUrgentStorageSuffix()}`);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(parsed) ? parsed : []);
-  } catch (_) {
-    return new Set();
-  }
+  return acknowledgedUrgentIdsInMemory;
 }
 
 function saveLocalAcknowledgedUrgentId(alertId) {
   if (!alertId) return;
-  const set = getLocalAcknowledgedUrgentIds();
-  set.add(alertId);
-  try {
-    localStorage.setItem(`${STORAGE_PREFIX}ack_urgent_${getUrgentStorageSuffix()}`, JSON.stringify(Array.from(set)));
-  } catch (_) {}
+  acknowledgedUrgentIdsInMemory.add(alertId);
 }
 
 function getLocalPushedUrgentIds() {
-  try {
-    const raw = localStorage.getItem(`${STORAGE_PREFIX}pushed_urgent_${getUrgentStorageSuffix()}`);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(parsed) ? parsed : []);
-  } catch (_) {
-    return new Set();
-  }
+  return pushedUrgentIdsInMemory;
 }
 
 function saveLocalPushedUrgentId(alertId) {
   if (!alertId) return;
-  const set = getLocalPushedUrgentIds();
-  set.add(alertId);
-  try {
-    localStorage.setItem(`${STORAGE_PREFIX}pushed_urgent_${getUrgentStorageSuffix()}`, JSON.stringify(Array.from(set)));
-  } catch (_) {}
+  pushedUrgentIdsInMemory.add(alertId);
 }
 
 function syncPushPermissionBannerUI() {
@@ -6578,29 +6648,29 @@ async function collectActiveUrgentAlertsForCurrentUser() {
   return alerts;
 }
 
-async function acknowledgeUrgentAlertItem(alertItem) {
+async function acknowledgeUrgentAlertItem(alertItem, options = {}) {
   if (!alertItem || !alertItem.id) return;
-  saveLocalAcknowledgedUrgentId(alertItem.id);
 
   const myIdLower = String(currentUserId || "").toLowerCase();
   const warnDocId = alertItem.warningDocId || `${alertItem.id}__${myIdLower}`;
   const nowIso = new Date().toISOString();
 
   // Student/Mentor updates ONLY their own urgentWarnings doc (acknowledged & acknowledgedAt)
-  try {
-    const existingWarn = await dbGetDoc("urgentWarnings", warnDocId);
-    if (existingWarn) {
-      await dbSetDoc(
-        "urgentWarnings",
-        warnDocId,
-        {
-          acknowledged: true,
-          acknowledgedAt: nowIso
-        },
-        true
-      );
-    }
-  } catch (_) {}
+  const existingWarn = await dbGetDoc("urgentWarnings", warnDocId, options);
+  if (existingWarn) {
+    const retryFn = options?.onRetry || (() => acknowledgeUrgentAlertItem(alertItem, options));
+    await dbSetDoc(
+      "urgentWarnings",
+      warnDocId,
+      {
+        acknowledged: true,
+        acknowledgedAt: nowIso
+      },
+      true,
+      { ...options, onRetry: retryFn }
+    );
+  }
+  saveLocalAcknowledgedUrgentId(alertItem.id);
 }
 
 function renderUrgentBlockingModalFromQueue() {
@@ -6657,31 +6727,41 @@ document.getElementById("btn-acknowledge-urgent-alert")?.addEventListener("click
     return;
   }
   const acked = currentDisplayedUrgentAlert;
-  activeUrgentAlertQueue = activeUrgentAlertQueue.filter((a) => a.id !== acked.id);
-  await acknowledgeUrgentAlertItem(acked);
-  renderUrgentBlockingModalFromQueue();
-  await renderUrgentAlertsBellDropdown();
-  showToast("Alert Acknowledged", "Urgent institutional notice marked as read.", "info");
+  const performAck = async () => {
+    try {
+      await acknowledgeUrgentAlertItem(acked, { onRetry: performAck });
+      activeUrgentAlertQueue = activeUrgentAlertQueue.filter((a) => a.id !== acked.id);
+      renderUrgentBlockingModalFromQueue();
+      await renderUrgentAlertsBellDropdown();
+      showToast("Alert Acknowledged", "Urgent institutional notice marked as read.", "info");
+    } catch (_) {}
+  };
+  await performAck();
 });
 
 document.getElementById("btn-urgent-alert-action")?.addEventListener("click", async () => {
   if (!currentDisplayedUrgentAlert) return;
   const targetAlert = currentDisplayedUrgentAlert;
-  activeUrgentAlertQueue = activeUrgentAlertQueue.filter((a) => a.id !== targetAlert.id);
-  await acknowledgeUrgentAlertItem(targetAlert);
-  renderUrgentBlockingModalFromQueue();
-  await renderUrgentAlertsBellDropdown();
+  const performAckAndAct = async () => {
+    try {
+      await acknowledgeUrgentAlertItem(targetAlert, { onRetry: performAckAndAct });
+      activeUrgentAlertQueue = activeUrgentAlertQueue.filter((a) => a.id !== targetAlert.id);
+      renderUrgentBlockingModalFromQueue();
+      await renderUrgentAlertsBellDropdown();
 
-  if (targetAlert.kind === "student_arc" && currentRole === "student") {
-    pendingUploadTaskId = "arc";
-    document.getElementById("task-doc-input")?.click();
-  } else if (targetAlert.kind === "mentor_report" && currentRole === "mentor") {
-    const reportModal = document.getElementById("monthly-report-modal");
-    const monthInput = document.getElementById("report-month-input");
-    if (monthInput && targetAlert.monthKey) monthInput.value = targetAlert.monthKey;
-    if (reportModal) reportModal.style.display = "flex";
-    await refreshMentorReportModalState();
-  }
+      if (targetAlert.kind === "student_arc" && currentRole === "student") {
+        pendingUploadTaskId = "arc";
+        document.getElementById("task-doc-input")?.click();
+      } else if (targetAlert.kind === "mentor_report" && currentRole === "mentor") {
+        const reportModal = document.getElementById("monthly-report-modal");
+        const monthInput = document.getElementById("report-month-input");
+        if (monthInput && targetAlert.monthKey) monthInput.value = targetAlert.monthKey;
+        if (reportModal) reportModal.style.display = "flex";
+        await refreshMentorReportModalState();
+      }
+    } catch (_) {}
+  };
+  await performAckAndAct();
 });
 
 async function renderUrgentAlertsBellDropdown() {
@@ -6789,15 +6869,20 @@ document.getElementById("nav-bell-btn")?.addEventListener("click", async (e) => 
 // Acknowledge All Urgent Alerts from Bell Header
 document.getElementById("btn-mark-all-read")?.addEventListener("click", async (e) => {
   e.stopPropagation();
-  const allUrgent = await collectActiveUrgentAlertsForCurrentUser();
-  const unack = allUrgent.filter((a) => !a.isAcknowledged);
-  for (const item of unack) {
-    await acknowledgeUrgentAlertItem(item);
-  }
-  activeUrgentAlertQueue = [];
-  renderUrgentBlockingModalFromQueue();
-  await renderUrgentAlertsBellDropdown();
-  showToast("Urgent Alerts Acknowledged", "All urgent system warnings marked as read.", "info");
+  const performMarkAllAck = async () => {
+    try {
+      const allUrgent = await collectActiveUrgentAlertsForCurrentUser();
+      const unack = allUrgent.filter((a) => !a.isAcknowledged);
+      for (const item of unack) {
+        await acknowledgeUrgentAlertItem(item, { onRetry: performMarkAllAck });
+      }
+      activeUrgentAlertQueue = [];
+      renderUrgentBlockingModalFromQueue();
+      await renderUrgentAlertsBellDropdown();
+      showToast("Urgent Alerts Acknowledged", "All urgent system warnings marked as read.", "info");
+    } catch (_) {}
+  };
+  await performMarkAllAck();
 });
 
 // Close Bell Dropdown When Clicking Outside
@@ -7390,42 +7475,54 @@ document.getElementById("chat-input-form")?.addEventListener("submit", async (e)
     return;
   }
 
-  if (inputEl) inputEl.value = "";
   const senderKey = String(currentRole === "admin" ? "admin" : currentUserId || "").toLowerCase();
   const recipientKey = String(activeChatRecipientId || "").toLowerCase();
   const channelId = getChatChannelId(senderKey, recipientKey);
   const nowIso = new Date().toISOString();
 
-  try {
-    const chatDoc = (await dbGetDoc("chats", channelId)) || { messages: [] };
-    const messages = Array.isArray(chatDoc.messages) ? chatDoc.messages : [];
-    messages.push({
-      senderId: senderKey,
-      senderName: currentRole === "admin" ? "International Office" : currentUserName,
-      recipientId: recipientKey,
-      recipientName: activeChatRecipientName,
-      text,
-      readBy: [senderKey],
-      sentAt: nowIso
-    });
+  const performSendChatMessage = async () => {
+    try {
+      const chatDoc = (await dbGetDoc("chats", channelId)) || { messages: [] };
+      const messages = Array.isArray(chatDoc.messages) ? [...chatDoc.messages] : [];
+      messages.push({
+        senderId: senderKey,
+        senderName: currentRole === "admin" ? "International Office" : currentUserName,
+        recipientId: recipientKey,
+        recipientName: activeChatRecipientName,
+        text,
+        readBy: [senderKey],
+        sentAt: nowIso
+      });
 
-    await dbSetDoc("chats", channelId, {
-      participants: [senderKey, recipientKey].sort(),
-      lastSenderId: senderKey,
-      messages,
-      updatedAt: nowIso
-    });
+      await dbSetDoc(
+        "chats",
+        channelId,
+        {
+          participants: [senderKey, recipientKey].sort(),
+          lastSenderId: senderKey,
+          messages,
+          updatedAt: nowIso
+        },
+        true,
+        { onRetry: performSendChatMessage }
+      );
 
-    await renderChatMessages();
-    await renderMessengerThreadsList();
-    await refreshMessengerUnreadBadges(false);
-  } catch (err) {
-    showToast("Message Blocked", err.message || "Unauthorized messaging channel.", "error");
-  }
+      if (inputEl) inputEl.value = "";
+      await renderChatMessages();
+      await renderMessengerThreadsList();
+      await refreshMessengerUnreadBadges(false);
+    } catch (err) {
+      if (!err?._syncToastShown) {
+        showToast("Message Blocked", err.message || "Unauthorized messaging channel.", "error");
+      }
+    }
+  };
+
+  await performSendChatMessage();
 });
 
 // System B Unread Counter & Lightweight Toast Refresh (Strictly NO Blocking Popups & Authorized Channels Only!)
-async function refreshMessengerUnreadBadges(showToastOnNew = false) {
+async function refreshMessengerUnreadBadges(showToastOnNew = false, options = {}) {
   const myKey = getMyChatKey();
   const navBadge = document.getElementById("nav-messenger-unread-badge");
   const fabBadge = document.getElementById("floating-messenger-unread-badge");
@@ -7440,7 +7537,7 @@ async function refreshMessengerUnreadBadges(showToastOnNew = false) {
     return;
   }
 
-  const allChats = await loadScopedChatsForCurrentUser();
+  const allChats = await loadScopedChatsForCurrentUser(options);
   let unreadCount = 0;
   let unreadFromMentor = 0;
   let unreadFromAdmin = 0;
@@ -7524,26 +7621,26 @@ async function refreshBellNotifications(showToastOnNew = false) {
   ]);
 }
 
-// Real-Time Cross-Tab & Periodic Notification + Portal Config Sync
+// Periodic Notification + Portal Config Sync
 let lastSyncedConfigUpdatedAt = null;
 
-async function syncLivePortalConfig(forceReloadView = false) {
+async function syncLivePortalConfig(forceReloadView = false, options = {}) {
   if (!currentRole) return;
-  const cfg = await loadPortalConfig();
+  const cfg = await loadPortalConfig(options);
   const cfgUpdatedAt = cfg?.updatedAt || "";
   const changed = lastSyncedConfigUpdatedAt !== null && cfgUpdatedAt !== lastSyncedConfigUpdatedAt;
   lastSyncedConfigUpdatedAt = cfgUpdatedAt;
 
   if (!forceReloadView && !changed) {
     if (currentRole === "student" && currentUserId) {
-      const checklistDoc = (await dbGetDoc("checklists", currentUserId)) || {};
+      const checklistDoc = (await dbGetDoc("checklists", currentUserId, options)) || {};
       renderStudentArcDeadlineAndBanner(checklistDoc.tasks || {}, checklistDoc.taskDocs || {}, cfg);
     }
     return;
   }
 
   if (currentRole === "student" && currentUserId) {
-    const checklistDoc = (await dbGetDoc("checklists", currentUserId)) || {};
+    const checklistDoc = (await dbGetDoc("checklists", currentUserId, options)) || {};
     renderStudentArcDeadlineAndBanner(checklistDoc.tasks || {}, checklistDoc.taskDocs || {}, cfg);
     await checkAndDisplayUrgentSystemAlerts(true);
   } else if (currentRole === "mentor" && currentUserId) {
@@ -7555,37 +7652,10 @@ async function syncLivePortalConfig(forceReloadView = false) {
   }
 }
 
-window.addEventListener("storage", (e) => {
-  if (e.key && e.key.startsWith(STORAGE_PREFIX) && currentRole) {
-    refreshMessengerUnreadBadges(true);
-    if (e.key === STORAGE_PREFIX + "settings") {
-      syncLivePortalConfig(true);
-    } else if (e.key === STORAGE_PREFIX + "monthlyReports" && currentRole === "admin") {
-      loadAdminDashboard();
-    } else if (e.key === STORAGE_PREFIX + "checklists" && currentRole === "admin") {
-      loadAdminDashboard();
-    }
-    const chatModal = document.getElementById("chat-modal");
-    if (chatModal && chatModal.style.display === "flex") {
-      if (activeChatRecipientId) {
-        const senderKey = getMyChatKey();
-        const channelId = getChatChannelId(senderKey, activeChatRecipientId);
-        markChannelMessagesAsRead(channelId).then(async () => {
-          await renderChatMessages();
-          await renderMessengerThreadsList();
-          await refreshMessengerUnreadBadges(false);
-        });
-      } else {
-        renderMessengerThreadsList();
-      }
-    }
-  }
-});
-
 setInterval(() => {
   if (currentRole) {
-    refreshMessengerUnreadBadges(true);
-    syncLivePortalConfig(false);
+    refreshMessengerUnreadBadges(true, { silent: true });
+    syncLivePortalConfig(false, { silent: true });
   }
 }, 4000);
 
