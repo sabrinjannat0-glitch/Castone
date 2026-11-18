@@ -1028,6 +1028,47 @@
             <button type="button" class="btn-primary-action" id="btn-save-arc-deadline" data-i18n="btnSaveArcDeadline">💾 Save ARC Deadline</button>
           </div>
         </div>
+
+        <!-- Reporting Cycle Months Configuration (settings/portalConfig) -->
+        <div class="settings-sub-card" id="admin-reporting-months-settings-card">
+          <h4 data-i18n="reportingMonthsCardTitle">📅 Reporting Cycle Months</h4>
+          <p data-i18n="reportingMonthsCardSub">Configure the active reporting semester and YYYY-MM months stored in settings/portalConfig. Defaults to the current academic semester.</p>
+
+          <div class="responsive-form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;">
+            <div class="auth-input-group" style="margin-bottom: 8px;">
+              <label class="auth-input-label" for="admin-reporting-semester-select" data-i18n="reportingSemesterSelectLabel">Academic Semester</label>
+              <select id="admin-reporting-semester-select" class="auth-input">
+                <option value="spring" data-i18n="reportingSpringOption">Spring Semester (Mar – Jun)</option>
+                <option value="fall" data-i18n="reportingFallOption">Fall Semester (Sep – Dec)</option>
+              </select>
+            </div>
+            <div class="auth-input-group" style="margin-bottom: 8px;">
+              <label class="auth-input-label" for="admin-reporting-year-input" data-i18n="reportingYearInputLabel">Academic Year</label>
+              <input type="number" id="admin-reporting-year-input" class="auth-input" min="2020" max="2035" step="1" />
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+            <button type="button" class="btn-table-action" id="btn-reporting-current-semester-default" style="padding: 4px 10px; font-size: 11.5px;" data-i18n="btnUseCurrentSemesterDefault">↺ Use Current Semester Default</button>
+          </div>
+
+          <div class="auth-input-group" style="margin-bottom: 8px;">
+            <label class="auth-input-label" data-i18n="reportingMonthsListLabel">Active Reporting Months (YYYY-MM)</label>
+            <div id="admin-reporting-months-checkboxes" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;"></div>
+            <div style="display: flex; gap: 8px; margin-top: 10px; align-items: center;">
+              <input type="month" id="admin-reporting-custom-month-input" class="auth-input" placeholder="YYYY-MM" data-i18n-placeholder="addCustomReportingMonthPlaceholder" style="max-width: 170px; padding: 6px 10px; font-size: 12.5px;" />
+              <button type="button" class="btn-table-action" id="btn-add-reporting-month" style="padding: 6px 12px; font-size: 12px;" data-i18n="btnAddReportingMonth">+ Add Month</button>
+            </div>
+          </div>
+
+          <div class="deadline-preview-callout" id="admin-reporting-months-preview">
+            <span data-i18n="reportingMonthsPreviewLabel">Configured Reporting Months:</span> <strong id="admin-reporting-months-preview-val"></strong>
+          </div>
+
+          <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+            <button type="button" class="btn-primary-action" id="btn-save-reporting-months" data-i18n="btnSaveReportingMonths">💾 Save Reporting Months</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1210,7 +1251,7 @@
           <div class="responsive-form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="auth-input-group">
               <label class="auth-input-label" data-i18n="reportingMonthLabel">Reporting Month</label>
-              <input type="month" id="report-month-input" class="auth-input" value="2026-10" required />
+              <input type="month" id="report-month-input" class="auth-input" required />
             </div>
             <div class="auth-input-group">
               <label class="auth-input-label" data-i18n="sessionsRegisteredLabel">Sessions Registered (Auto 1:1 from PDFs)</label>

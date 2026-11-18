@@ -35,10 +35,67 @@ const CORE_TASKS = ["housing", "arc", "phone", "bank", "insurance", "lms", "libr
 const CYCLE_TOTAL_SESSIONS = 6;       // 6 reports/sessions across a 3-month cycle
 const CYCLE_MAX_MONTHS = 3;           // 3-month cycle structure
 const MONTH_MAX_SESSIONS = 2;         // 2 reports/sessions per month
-const DEFAULT_CYCLE_MONTHS = ["2026-10", "2026-11", "2026-12"]; // Standard 3-month reporting cycle
 const ARC_WARNING_COOLDOWN_MS = 30000; // 30s debounce/cooldown window against duplicate clicks
 const OFFICE_CONTACT_INFO =
   "Please visit the Global Office (Building 30, Room 201-4) with your student or mentor ID to reset your password.";
+
+// Default semester month keys (YYYY-MM):
+// - Spring = Mar–Jun (YYYY-03 .. YYYY-06)
+// - Fall = Sep–Dec (YYYY-09 .. YYYY-12)
+// - In Jan–Feb, default to the just-finished Fall semester (Sep–Dec of the previous year).
+function getDefaultReportingMonthsForSemester(semesterKey = "fall", academicYear = new Date().getFullYear()) {
+  const yr = Number(academicYear) || new Date().getFullYear();
+  if (semesterKey === "spring") {
+    return [`${yr}-03`, `${yr}-04`, `${yr}-05`, `${yr}-06`];
+  }
+  return [`${yr}-09`, `${yr}-10`, `${yr}-11`, `${yr}-12`];
+}
+
+function computeDefaultReportingCycle(now = new Date()) {
+  const d = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const year = d.getFullYear();
+  const month = d.getMonth() + 1; // 1..12
+  if (month === 1 || month === 2) {
+    const prevYear = year - 1;
+    return {
+      semester: "fall",
+      academicYear: prevYear,
+      reportingMonths: getDefaultReportingMonthsForSemester("fall", prevYear)
+    };
+  }
+  if (month >= 3 && month <= 8) {
+    return {
+      semester: "spring",
+      academicYear: year,
+      reportingMonths: getDefaultReportingMonthsForSemester("spring", year)
+    };
+  }
+  return {
+    semester: "fall",
+    academicYear: year,
+    reportingMonths: getDefaultReportingMonthsForSemester("fall", year)
+  };
+}
+
+function normalizeReportingMonthsList(rawList) {
+  if (!Array.isArray(rawList)) return [];
+  const validSet = new Set();
+  rawList.forEach((item) => {
+    const clean = String(item || "").trim();
+    if (/^\d{4}-(0[1-9]|1[0-2])$/.test(clean)) {
+      validSet.add(clean);
+    }
+  });
+  return Array.from(validSet).sort((a, b) => a.localeCompare(b));
+}
+
+function getConfiguredReportingMonths() {
+  const fromConfig = normalizeReportingMonthsList(portalConfigCache?.reportingMonths);
+  if (fromConfig.length > 0) return fromConfig;
+  return computeDefaultReportingCycle().reportingMonths;
+}
+
+const INITIAL_DEFAULT_CYCLE = computeDefaultReportingCycle();
 
 let currentRole = null;       // 'student' | 'mentor' | 'admin'
 let currentUserId = null;     // studentId, mentorId, or admin uid
@@ -64,13 +121,14 @@ let lastCsvImportSummary = null;
 let selectedRosterIds = new Set();
 
 // Admin Reports Semester-Based On-Demand Month Checklist & Dynamic Portal Config State
-// Level 1: adminSelectedSemester ('fall' | 'spring') + adminSelectedAcademicYear (e.g. 2026)
+// Level 1: adminSelectedSemester ('fall' | 'spring') + adminSelectedAcademicYear
 // Level 2: Multi-Select Month Checklist (Admin checks any subset of the semester's 6 calendar months)
 // Level 3: adminSelectedReportMonth === "YYYY-MM" (Active Month Mentor Directory — strict X/2 quota)
 // Level 4: openMentorMonthSubmissionModal(mentorId, monthKey) (2 Session PDFs Inspector)
-let adminSelectedSemester = "fall"; // 'fall' | 'spring'
-let adminSelectedAcademicYear = 2026;
-let adminActiveMonthsBySemester = {}; // { "fall_2026": ["2026-10", ...], "spring_2026": ["2026-03", ...] }
+let adminSelectedSemester = INITIAL_DEFAULT_CYCLE.semester; // 'fall' | 'spring'
+let adminSelectedAcademicYear = INITIAL_DEFAULT_CYCLE.academicYear;
+let adminActiveMonthsBySemester = {}; // { "fall_2026": ["2026-09", ...], "spring_2026": ["2026-03", ...] }
+let adminDraftReportingMonths = [...INITIAL_DEFAULT_CYCLE.reportingMonths];
 let adminSelectedReportMonth = null;
 let adminMonthMentorSearch = "";
 let adminMonthMentorStatusFilter = "all"; // 'all' | 'submitted' | 'pending'
@@ -758,51 +816,56 @@ function buildDefaultArcDeadlineLocal() {
 
 async function loadPortalConfig(options = {}) {
   const stored = await dbGetDoc("settings", "portalConfig", options);
-  if (stored && stored.arcDeadline) {
-    const storedActiveMonths =
-      stored.activeSemesterMonths && typeof stored.activeSemesterMonths === "object"
-        ? stored.activeSemesterMonths
-        : {};
-    adminActiveMonthsBySemester = {
-      ...storedActiveMonths,
-      ...adminActiveMonthsBySemester
-    };
-    portalConfigCache = {
-      arcDeadline: stored.arcDeadline,
-      arcCustomMessage:
-        typeof stored.arcCustomMessage === "string" && stored.arcCustomMessage.trim()
-          ? stored.arcCustomMessage.trim()
-          : DEFAULT_ARC_BANNER_TEMPLATE,
-      activeSemesterMonths: { ...adminActiveMonthsBySemester },
-      arcWarning: stored.arcWarning || { active: false, lastSentAt: "", lastRecipientCount: 0 },
-      mentorReportWarnings: stored.mentorReportWarnings || {}
-    };
-    return portalConfigCache;
-  }
+  const defaultCycle = computeDefaultReportingCycle();
+  const storedReportingMonths = normalizeReportingMonthsList(stored?.reportingMonths);
+  const reportingMonths =
+    storedReportingMonths.length > 0 ? storedReportingMonths : defaultCycle.reportingMonths;
+  const inferredFirst = inferSemesterAndYearFromMonth(reportingMonths[0] || defaultCycle.reportingMonths[0]);
+  const reportingSemester =
+    stored?.reportingSemester === "spring" || stored?.reportingSemester === "fall"
+      ? stored.reportingSemester
+      : inferredFirst.semester;
+  const reportingAcademicYear =
+    Number(stored?.reportingAcademicYear) || inferredFirst.year || defaultCycle.academicYear;
 
-  const initialConfig = {
+  const storedActiveMonths =
+    stored?.activeSemesterMonths && typeof stored.activeSemesterMonths === "object"
+      ? stored.activeSemesterMonths
+      : {};
+  const defaultBlockKey = getSemesterBlockKey(reportingSemester, reportingAcademicYear);
+  adminActiveMonthsBySemester = {
+    [defaultBlockKey]: reportingMonths,
+    ...storedActiveMonths,
+    ...adminActiveMonthsBySemester
+  };
+
+  portalConfigCache = {
     arcDeadline: stored?.arcDeadline || buildDefaultArcDeadlineLocal(),
     arcCustomMessage:
       typeof stored?.arcCustomMessage === "string" && stored.arcCustomMessage.trim()
         ? stored.arcCustomMessage.trim()
         : DEFAULT_ARC_BANNER_TEMPLATE,
-    activeSemesterMonths:
-      stored?.activeSemesterMonths && typeof stored.activeSemesterMonths === "object"
-        ? stored.activeSemesterMonths
-        : {},
+    reportingMonths,
+    reportingSemester,
+    reportingAcademicYear,
+    activeSemesterMonths: { ...adminActiveMonthsBySemester },
     arcWarning: stored?.arcWarning || { active: false, lastSentAt: "", lastRecipientCount: 0 },
     mentorReportWarnings: stored?.mentorReportWarnings || {}
   };
-  adminActiveMonthsBySemester = {
-    ...initialConfig.activeSemesterMonths,
-    ...adminActiveMonthsBySemester
-  };
-  portalConfigCache = initialConfig;
   return portalConfigCache;
 }
 
 async function savePortalConfig(partialUpdate, options = {}) {
   const base = portalConfigCache || (await loadPortalConfig({ silent: true }));
+  const defaultCycle = computeDefaultReportingCycle();
+  const nextReportingMonths =
+    partialUpdate.reportingMonths !== undefined
+      ? normalizeReportingMonthsList(partialUpdate.reportingMonths)
+      : normalizeReportingMonthsList(base.reportingMonths);
+  const effectiveReportingMonths =
+    nextReportingMonths.length > 0 ? nextReportingMonths : defaultCycle.reportingMonths;
+  const inferredFirst = inferSemesterAndYearFromMonth(effectiveReportingMonths[0]);
+
   const next = {
     ...base,
     ...partialUpdate,
@@ -810,6 +873,15 @@ async function savePortalConfig(partialUpdate, options = {}) {
       partialUpdate.arcCustomMessage !== undefined
         ? String(partialUpdate.arcCustomMessage || "").trim() || DEFAULT_ARC_BANNER_TEMPLATE
         : base.arcCustomMessage || DEFAULT_ARC_BANNER_TEMPLATE,
+    reportingMonths: effectiveReportingMonths,
+    reportingSemester:
+      partialUpdate.reportingSemester !== undefined
+        ? partialUpdate.reportingSemester
+        : base.reportingSemester || inferredFirst.semester,
+    reportingAcademicYear:
+      partialUpdate.reportingAcademicYear !== undefined
+        ? Number(partialUpdate.reportingAcademicYear) || inferredFirst.year
+        : Number(base.reportingAcademicYear) || inferredFirst.year,
     activeSemesterMonths:
       partialUpdate.activeSemesterMonths !== undefined
         ? partialUpdate.activeSemesterMonths
@@ -932,8 +1004,8 @@ function getSemesterDefinition(semesterKey = "fall") {
 // Returns the dedicated 6 calendar months (YYYY-MM) for a selected semester and academic year:
 // - Fall Semester ("fall"): September through February (YYYY-09 .. YYYY-12, (YYYY+1)-01, (YYYY+1)-02)
 // - Spring Semester ("spring"): March through August (YYYY-03 .. YYYY-08)
-function getSemesterMonths(semesterKey = "fall", academicYear = 2026) {
-  const yr = Number(academicYear) || 2026;
+function getSemesterMonths(semesterKey = "fall", academicYear = INITIAL_DEFAULT_CYCLE.academicYear) {
+  const yr = Number(academicYear) || INITIAL_DEFAULT_CYCLE.academicYear;
   if (semesterKey === "spring") {
     return [`${yr}-03`, `${yr}-04`, `${yr}-05`, `${yr}-06`, `${yr}-07`, `${yr}-08`];
   }
@@ -945,7 +1017,10 @@ function inferSemesterAndYearFromMonth(monthKey) {
   const clean = String(monthKey || "").trim();
   const match = clean.match(/^(\d{4})-(\d{2})$/);
   if (!match) {
-    return { semester: "fall", year: 2026 };
+    return {
+      semester: INITIAL_DEFAULT_CYCLE.semester,
+      year: INITIAL_DEFAULT_CYCLE.academicYear
+    };
   }
   const yr = Number(match[1]);
   const mo = Number(match[2]);
@@ -964,18 +1039,16 @@ function isSameSemesterBlock(monthA, monthB) {
   return a.semester === b.semester && a.year === b.year;
 }
 
-function getSemesterBlockKey(semesterKey = "fall", academicYear = 2026) {
+function getSemesterBlockKey(semesterKey = "fall", academicYear = INITIAL_DEFAULT_CYCLE.academicYear) {
   const sem = semesterKey === "spring" ? "spring" : "fall";
-  const yr = Number(academicYear) || 2026;
+  const yr = Number(academicYear) || INITIAL_DEFAULT_CYCLE.academicYear;
   return `${sem}_${yr}`;
 }
 
 // Returns ONLY the months explicitly checked/selected by the Admin for this semester (in calendar order).
-// Never auto-generates all 6 cards at once: if never configured yet, only months that already have
-// submitted reports (if any) are initially active; empty semesters start with 0 checked months ([]).
 function getActiveCheckedMonthsForSemester(
   semesterKey = "fall",
-  academicYear = 2026,
+  academicYear = INITIAL_DEFAULT_CYCLE.academicYear,
   reportsSource = adminReportsList
 ) {
   const allSix = getSemesterMonths(semesterKey, academicYear);
@@ -992,7 +1065,11 @@ function getActiveCheckedMonthsForSemester(
     return allSix.filter((mk) => selectedSet.has(mk));
   }
 
-  // First-time default: never activate all 6 months automatically; only activate months with existing uploads
+  const configuredMonths = getConfiguredReportingMonths().filter((mk) => allSix.includes(mk));
+  if (configuredMonths.length > 0) {
+    return configuredMonths;
+  }
+
   const submittedMonthsSet = new Set(
     (reportsSource || []).map((r) => r?.month).filter(Boolean)
   );
@@ -1015,13 +1092,30 @@ function setActiveCheckedMonthsForSemester(semesterKey, academicYear, nextChecke
     adminSelectedReportMonth = null;
   }
 
+  const updatePayload = {
+    activeSemesterMonths: { ...adminActiveMonthsBySemester }
+  };
+  if (orderedSelection.length > 0) {
+    updatePayload.reportingMonths = orderedSelection;
+    updatePayload.reportingSemester = semesterKey === "spring" ? "spring" : "fall";
+    updatePayload.reportingAcademicYear = Number(academicYear) || INITIAL_DEFAULT_CYCLE.academicYear;
+    adminDraftReportingMonths = [...orderedSelection];
+  }
+
   // Persist asynchronously without blocking instant UI toggle
-  savePortalConfig({ activeSemesterMonths: { ...adminActiveMonthsBySemester } }).catch(() => {});
+  savePortalConfig(updatePayload).catch(() => {});
   return orderedSelection;
 }
 
 function getAvailableAcademicYears(reportsSource = []) {
-  const years = new Set([2025, 2026, 2027]);
+  const curYr = INITIAL_DEFAULT_CYCLE.academicYear;
+  const years = new Set([curYr - 1, curYr, curYr + 1]);
+  if (portalConfigCache?.reportingAcademicYear) {
+    years.add(Number(portalConfigCache.reportingAcademicYear));
+  }
+  getConfiguredReportingMonths().forEach((mk) => {
+    years.add(inferSemesterAndYearFromMonth(mk).year);
+  });
   (reportsSource || []).forEach((r) => {
     if (r?.month) {
       years.add(inferSemesterAndYearFromMonth(r.month).year);
@@ -1030,9 +1124,9 @@ function getAvailableAcademicYears(reportsSource = []) {
   return Array.from(years).sort((a, b) => a - b);
 }
 
-// Returns chronological cycle months (always includes Oct, Nov, Dec + any submitted months)
+// Returns chronological cycle months (from admin-configured settings/portalConfig + any submitted months)
 function buildActiveCycleMonths(reportsSource = []) {
-  const set = new Set(DEFAULT_CYCLE_MONTHS);
+  const set = new Set(getConfiguredReportingMonths());
   (reportsSource || []).forEach((r) => {
     if (r?.month) set.add(r.month);
   });
@@ -2788,7 +2882,11 @@ async function refreshMentorReportModalState() {
 
   if (!currentUserId || !infoBanner) return;
 
-  const selectedMonth = monthInput?.value || "2026-10";
+  const configuredMonths = getConfiguredReportingMonths();
+  if (monthInput && !monthInput.value) {
+    monthInput.value = configuredMonths[0];
+  }
+  const selectedMonth = monthInput?.value || configuredMonths[0];
   const myIdLower = String(currentUserId).trim().toLowerCase();
   const allReports = await dbQuery("monthlyReports", where("mentorId", "==", myIdLower));
   const myReports = allReports.filter(
@@ -2974,14 +3072,17 @@ async function openMentorReportModal() {
 
   // Auto-advance month picker to the next unsubmitted cycle month so previous months are never accidentally targeted
   if (currentUserId && monthInput) {
+    await loadPortalConfig({ silent: true });
+    const configuredMonths = getConfiguredReportingMonths();
     const myIdLower = String(currentUserId).trim().toLowerCase();
     const allReports = await dbQuery("monthlyReports", where("mentorId", "==", myIdLower));
     const myReports = allReports.filter(
       (r) => String(r.mentorId || "").toLowerCase() === myIdLower
     );
-    const nextOpenMonth = DEFAULT_CYCLE_MONTHS.find(
-      (mk) => getMentorMonthAggregatedData(currentUserId, mk, myReports).filesCount === 0
-    );
+    const nextOpenMonth =
+      configuredMonths.find(
+        (mk) => getMentorMonthAggregatedData(currentUserId, mk, myReports).filesCount === 0
+      ) || configuredMonths[0];
     if (nextOpenMonth) {
       monthInput.value = nextOpenMonth;
     }
@@ -3004,7 +3105,8 @@ async function openMentorReportModal() {
 
 document.getElementById("monthly-report-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const month = document.getElementById("report-month-input")?.value || "2026-10";
+  const configuredMonths = getConfiguredReportingMonths();
+  const month = document.getElementById("report-month-input")?.value || configuredMonths[0];
   const title = (document.getElementById("report-title-input")?.value || "").trim();
   const notes = (document.getElementById("report-notes-input")?.value || "").trim();
   const concerns = (document.getElementById("report-concerns-input")?.value || "").trim();
@@ -3216,6 +3318,15 @@ async function loadAdminDashboard() {
     dbGetAll("announcements"),
     loadPortalConfig()
   ]);
+
+  if (portalConfigCache) {
+    if (!adminSelectedReportMonth) {
+      adminSelectedSemester = portalConfigCache.reportingSemester || INITIAL_DEFAULT_CYCLE.semester;
+      adminSelectedAcademicYear =
+        Number(portalConfigCache.reportingAcademicYear) || INITIAL_DEFAULT_CYCLE.academicYear;
+    }
+    adminDraftReportingMonths = [...getConfiguredReportingMonths()];
+  }
 
   // Clean up any legacy duplicate `arc_warn_*` entries from announcements
   const cleanedAnnouncements = [];
@@ -6333,6 +6444,67 @@ function updateAdminDeadlinePreviewUI(rawDeadlineValue, rawCustomMessage) {
   `;
 }
 
+function renderAdminReportingMonthsCheckboxes() {
+  const container = document.getElementById("admin-reporting-months-checkboxes");
+  const previewValEl = document.getElementById("admin-reporting-months-preview-val");
+  const semSelect = document.getElementById("admin-reporting-semester-select");
+  const yrInput = document.getElementById("admin-reporting-year-input");
+  if (!container) return;
+
+  const semVal = semSelect?.value === "spring" ? "spring" : "fall";
+  const yrVal = Number(yrInput?.value) || INITIAL_DEFAULT_CYCLE.academicYear;
+  const semesterDefaultFour = getDefaultReportingMonthsForSemester(semVal, yrVal);
+  const semesterSix = getSemesterMonths(semVal, yrVal);
+
+  const candidateSet = new Set([
+    ...semesterDefaultFour,
+    ...semesterSix,
+    ...normalizeReportingMonthsList(adminDraftReportingMonths)
+  ]);
+  const candidateMonths = Array.from(candidateSet).sort((a, b) => a.localeCompare(b));
+  const selectedSet = new Set(normalizeReportingMonthsList(adminDraftReportingMonths));
+
+  container.innerHTML = candidateMonths
+    .map((mk) => {
+      const isChecked = selectedSet.has(mk);
+      const calName = getCalendarMonthShortName(mk);
+      return `
+        <label class="month-check-option ${isChecked ? "checked" : ""}" style="padding: 6px 10px; font-size: 12px;">
+          <span class="month-check-left">
+            <input
+              type="checkbox"
+              data-admin-reporting-month-cb="${escapeHtml(mk)}"
+              ${isChecked ? "checked" : ""}
+            />
+            <span class="month-check-label-text">
+              <span class="month-check-name">${escapeHtml(mk)} (${escapeHtml(calName)})</span>
+            </span>
+          </span>
+        </label>
+      `;
+    })
+    .join("");
+
+  container.querySelectorAll("[data-admin-reporting-month-cb]").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const mk = cb.getAttribute("data-admin-reporting-month-cb");
+      const nextSet = new Set(normalizeReportingMonthsList(adminDraftReportingMonths));
+      if (cb.checked) {
+        nextSet.add(mk);
+      } else {
+        nextSet.delete(mk);
+      }
+      adminDraftReportingMonths = normalizeReportingMonthsList(Array.from(nextSet));
+      renderAdminReportingMonthsCheckboxes();
+    });
+  });
+
+  if (previewValEl) {
+    const normalized = normalizeReportingMonthsList(adminDraftReportingMonths);
+    previewValEl.textContent = normalized.length > 0 ? normalized.join(", ") : "—";
+  }
+}
+
 function renderAdminSettingsPanel() {
   const deadlineInput = document.getElementById("admin-arc-deadline-input");
   const customMsgInput = document.getElementById("admin-arc-custom-message-input");
@@ -6352,7 +6524,143 @@ function renderAdminSettingsPanel() {
     deadlineInput?.value || info.inputVal,
     customMsgInput?.value ?? savedTemplate
   );
+
+  // Populate Reporting Cycle Months Settings Card
+  const semSelect = document.getElementById("admin-reporting-semester-select");
+  const yrInput = document.getElementById("admin-reporting-year-input");
+  const configuredMonths = getConfiguredReportingMonths();
+  const inferred = inferSemesterAndYearFromMonth(configuredMonths[0]);
+  const activeSem =
+    portalConfigCache?.reportingSemester === "spring" || portalConfigCache?.reportingSemester === "fall"
+      ? portalConfigCache.reportingSemester
+      : inferred.semester;
+  const activeYr = Number(portalConfigCache?.reportingAcademicYear) || inferred.year;
+
+  if (semSelect && document.activeElement !== semSelect) {
+    semSelect.value = activeSem;
+  }
+  if (yrInput && document.activeElement !== yrInput) {
+    yrInput.value = String(activeYr);
+  }
+  if (!Array.isArray(adminDraftReportingMonths) || adminDraftReportingMonths.length === 0) {
+    adminDraftReportingMonths = [...configuredMonths];
+  }
+  renderAdminReportingMonthsCheckboxes();
 }
+
+function applyReportingSemesterPresetFromControls() {
+  const semSelect = document.getElementById("admin-reporting-semester-select");
+  const yrInput = document.getElementById("admin-reporting-year-input");
+  const semVal = semSelect?.value === "spring" ? "spring" : "fall";
+  const yrVal = Number(yrInput?.value) || INITIAL_DEFAULT_CYCLE.academicYear;
+  adminDraftReportingMonths = getDefaultReportingMonthsForSemester(semVal, yrVal);
+  renderAdminReportingMonthsCheckboxes();
+}
+
+document.getElementById("admin-reporting-semester-select")?.addEventListener("change", () => {
+  applyReportingSemesterPresetFromControls();
+});
+
+document.getElementById("admin-reporting-year-input")?.addEventListener("change", () => {
+  applyReportingSemesterPresetFromControls();
+});
+
+document.getElementById("btn-reporting-current-semester-default")?.addEventListener("click", () => {
+  const currentDefault = computeDefaultReportingCycle();
+  const semSelect = document.getElementById("admin-reporting-semester-select");
+  const yrInput = document.getElementById("admin-reporting-year-input");
+  if (semSelect) semSelect.value = currentDefault.semester;
+  if (yrInput) yrInput.value = String(currentDefault.academicYear);
+  adminDraftReportingMonths = [...currentDefault.reportingMonths];
+  renderAdminReportingMonthsCheckboxes();
+  const semLabel = `${getSemesterDefinition(currentDefault.semester).label} ${currentDefault.academicYear}`;
+  showToast(
+    t("toastReportingDefaultsRestoredTitle"),
+    t("toastReportingDefaultsRestoredMsg", {
+      semester: semLabel,
+      months: currentDefault.reportingMonths.join(", ")
+    }),
+    "info"
+  );
+});
+
+document.getElementById("btn-add-reporting-month")?.addEventListener("click", () => {
+  const customInput = document.getElementById("admin-reporting-custom-month-input");
+  const rawMonth = String(customInput?.value || "").trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(rawMonth)) {
+    showToast(
+      t("toastInvalidReportingMonthTitle"),
+      t("toastInvalidReportingMonthMsg"),
+      "error"
+    );
+    return;
+  }
+  const nextSet = new Set(normalizeReportingMonthsList(adminDraftReportingMonths));
+  nextSet.add(rawMonth);
+  adminDraftReportingMonths = normalizeReportingMonthsList(Array.from(nextSet));
+  if (customInput) customInput.value = "";
+  renderAdminReportingMonthsCheckboxes();
+});
+
+document.getElementById("btn-save-reporting-months")?.addEventListener("click", async () => {
+  const normalizedMonths = normalizeReportingMonthsList(adminDraftReportingMonths);
+  if (normalizedMonths.length === 0) {
+    showToast(
+      t("toastSelectAtLeastOneMonthTitle"),
+      t("toastSelectAtLeastOneMonthMsg"),
+      "error"
+    );
+    return;
+  }
+
+  const semSelect = document.getElementById("admin-reporting-semester-select");
+  const yrInput = document.getElementById("admin-reporting-year-input");
+  const inferred = inferSemesterAndYearFromMonth(normalizedMonths[0]);
+  const reportingSemester =
+    semSelect?.value === "spring" || semSelect?.value === "fall"
+      ? semSelect.value
+      : inferred.semester;
+  const reportingAcademicYear = Number(yrInput?.value) || inferred.year;
+  const blockKey = getSemesterBlockKey(reportingSemester, reportingAcademicYear);
+
+  const performSaveReportingMonths = async () => {
+    const saveBtn = document.getElementById("btn-save-reporting-months");
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      const nextActiveBySemester = {
+        ...(portalConfigCache?.activeSemesterMonths || {}),
+        ...adminActiveMonthsBySemester,
+        [blockKey]: normalizedMonths
+      };
+      await savePortalConfig(
+        {
+          reportingMonths: normalizedMonths,
+          reportingSemester,
+          reportingAcademicYear,
+          activeSemesterMonths: nextActiveBySemester
+        },
+        { onRetry: performSaveReportingMonths }
+      );
+      adminActiveMonthsBySemester = nextActiveBySemester;
+      adminSelectedSemester = reportingSemester;
+      adminSelectedAcademicYear = reportingAcademicYear;
+      if (adminSelectedReportMonth && !normalizedMonths.includes(adminSelectedReportMonth)) {
+        adminSelectedReportMonth = null;
+      }
+      renderAdminAll();
+      showToast(
+        t("toastReportingMonthsSavedTitle"),
+        t("toastReportingMonthsSavedMsg", { months: normalizedMonths.join(", ") }),
+        "success"
+      );
+    } catch (_) {
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  };
+
+  await performSaveReportingMonths();
+});
 
 document.getElementById("admin-arc-deadline-input")?.addEventListener("input", (e) => {
   updateAdminDeadlinePreviewUI(e.target.value, undefined);
