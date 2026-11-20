@@ -1,4 +1,10 @@
 node_modules/
-.firebase/
 *-debug.log
+.firebase/
 .DS_Store
+.env*
+*service-account*.json
+*serviceAccount*.json
+*-firebase-adminsdk-*.json
+*.key.json
+*-key.json

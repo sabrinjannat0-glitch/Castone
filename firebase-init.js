@@ -7,8 +7,14 @@
 // Import the pieces we need: the core app, Firestore (database),
 // and Auth (login/signup).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+import {
+  getFirestore,
+  connectFirestoreEmulator
+} from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+import {
+  getAuth,
+  connectAuthEmulator
+} from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
 
 // Your project's config, copied from the Firebase console.
 const firebaseConfig = {
@@ -28,3 +34,12 @@ const app = initializeApp(firebaseConfig);
 // auth  -> talk to Authentication (login/signup)
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+if (
+  typeof window !== "undefined" &&
+  (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") &&
+  new URLSearchParams(window.location.search).get("emulator") === "1"
+) {
+  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+}

@@ -187,8 +187,8 @@
         <div class="login-feature-item">
           <div class="login-feature-icon">📄</div>
           <div class="login-feature-text">
-            <h4 data-i18n="feat3Title">Secure document flow</h4>
-            <p data-i18n="feat3Desc">Send ARC documents directly to the right team.</p>
+            <h4 data-i18n="feat3Title">ARC status tracking</h4>
+            <p data-i18n="feat3Desc">Track your ARC application deadline and card pick-up status.</p>
           </div>
         </div>
       </div>
@@ -391,7 +391,7 @@
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
                 <span class="task-main-label task-title" data-task-id="housing">Move into dorm / housing</span>
-                <span class="task-sub-hint" data-i18n="taskHintHousing">Upload your housing confirmation</span>
+                <span class="task-sub-hint" data-i18n="taskHintHousing">Confirm your dormitory or off-campus housing move-in</span>
               </div>
             </div>
             <div class="task-right-actions">
@@ -410,7 +410,8 @@
                   <span class="task-badge-priority" data-i18n="badgePriority">🕒 Priority</span>
                   <span class="arc-deadline-pill" id="student-arc-deadline-badge" data-i18n="arcDueNotSet">📅 Due: Not set</span>
                 </div>
-                <span class="task-sub-hint" data-i18n="taskHintArc">Required for all international students (reviewed directly by International Office)</span>
+                <span class="task-sub-hint" data-i18n="taskHintArc">Required for all international students within 90 days of arrival</span>
+                <div id="student-arc-pickup-prompt" class="arc-pickup-prompt-box" style="display: none; margin-top: 10px;"></div>
               </div>
             </div>
             <div class="task-right-actions">
@@ -455,7 +456,7 @@
               <input type="checkbox" class="task-cb" />
               <div class="task-text-group">
                 <span class="task-main-label task-title" data-task-id="insurance">Enroll in health insurance</span>
-                <span class="task-sub-hint" data-i18n="taskHintInsurance">Submit your insurance confirmation</span>
+                <span class="task-sub-hint" data-i18n="taskHintInsurance">Complete your international student health insurance enrollment</span>
               </div>
             </div>
             <div class="task-right-actions">
@@ -735,6 +736,64 @@
           <span class="kpi-value-text" id="kpi-admin-active-mentors">0</span>
           <span class="kpi-sub-text" id="kpi-admin-mentors-sub" data-i18n="kpiStudentsAverage">0 students average</span>
         </div>
+      </div>
+    </div>
+
+    <!-- Step 6: Self-Reported ARC Follow-Up ("ARC not received" list & counts) -->
+    <div class="admin-arc-reviews-box" id="admin-arc-followup-box">
+      <div class="arc-reviews-header">
+        <div class="arc-reviews-title-wrap">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <h3 data-i18n="adminArcFollowupTitle">ARC not received — Follow-Up &amp; Counts</h3>
+            <span class="status-pill-badge pending" data-i18n="selfReportedBadge">self-reported</span>
+          </div>
+          <p data-i18n="adminArcFollowupSub">Student ARC pick-up status (self-reported)</p>
+        </div>
+      </div>
+
+      <!-- Self-Reported Counts: received / not received / no answer yet -->
+      <div class="admin-kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 16px;">
+        <div class="kpi-card-box" style="padding: 14px 16px;">
+          <div class="kpi-icon-square green">✓</div>
+          <div class="kpi-content-col">
+            <span class="kpi-label-text" data-i18n="arcCountReceivedLabel">Received (self-reported)</span>
+            <span class="kpi-value-text" id="admin-arc-count-received">0</span>
+          </div>
+        </div>
+        <div class="kpi-card-box" style="padding: 14px 16px;">
+          <div class="kpi-icon-square orange">!</div>
+          <div class="kpi-content-col">
+            <span class="kpi-label-text" data-i18n="arcCountNotReceivedLabel">Not received (self-reported)</span>
+            <span class="kpi-value-text" id="admin-arc-count-not-received">0</span>
+          </div>
+        </div>
+        <div class="kpi-card-box" style="padding: 14px 16px;">
+          <div class="kpi-icon-square blue">?</div>
+          <div class="kpi-content-col">
+            <span class="kpi-label-text" data-i18n="arcCountNoAnswerLabel">No answer yet (self-reported)</span>
+            <span class="kpi-value-text" id="admin-arc-count-no-answer">0</span>
+          </div>
+        </div>
+      </div>
+
+      <h4 style="margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #0f172a;" data-i18n="arcNotReceivedListHeading">ARC not received (self-reported)</h4>
+      <div class="arc-table-container">
+        <table class="clean-admin-table" id="admin-arc-not-received-table">
+          <thead>
+            <tr>
+              <th data-i18n="thStudentName">NAME</th>
+              <th data-i18n="thStudentId">STUDENT ID</th>
+              <th data-i18n="thDepartment">DEPARTMENT</th>
+              <th data-i18n="thDateReported">DATE REPORTED</th>
+              <th data-i18n="thStatus">STATUS</th>
+            </tr>
+          </thead>
+          <tbody id="admin-arc-not-received-tbody">
+            <tr>
+              <td colspan="5" style="text-align: center; padding: 24px; color: #94a3b8;" data-i18n="noArcNotReceivedStudents">0 students currently reporting ARC not received.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -1067,6 +1126,40 @@
 
           <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
             <button type="button" class="btn-primary-action" id="btn-save-reporting-months" data-i18n="btnSaveReportingMonths">💾 Save Reporting Months</button>
+          </div>
+        </div>
+
+        <!-- Step 6: ARC Distribution Date & Office Pick-Up Info (settings/portalConfig) -->
+        <div class="settings-sub-card" id="admin-arc-distribution-settings-card">
+          <h4 data-i18n="arcDistributionCardTitle">🪪 ARC Distribution Date &amp; Office Pick-Up Info</h4>
+          <p data-i18n="arcDistributionCardSub">If ARC distribution date has passed, students who haven't received their card yet see the pick-up prompt on their ARC task.</p>
+
+          <div class="auth-input-group" style="margin-top: 12px; margin-bottom: 10px;">
+            <label class="auth-input-label" for="admin-arc-distribution-date-input" data-i18n="arcDistributionDateLabel">ARC Distribution Date</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="date" id="admin-arc-distribution-date-input" class="auth-input" style="flex: 1;" />
+              <button type="button" class="btn-table-action" id="btn-clear-arc-distribution-date" style="padding: 8px 12px; font-size: 12px;" data-i18n="btnClearArcDistributionDate">Clear Date</button>
+            </div>
+          </div>
+
+          <div class="responsive-form-grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+            <div class="auth-input-group" style="margin-bottom: 0;">
+              <label class="auth-input-label" for="admin-office-name-input" data-i18n="officeNameLabel">Office Name</label>
+              <input type="text" id="admin-office-name-input" class="auth-input" value="Global Office" />
+            </div>
+            <div class="auth-input-group" style="margin-bottom: 0;">
+              <label class="auth-input-label" for="admin-office-address-input" data-i18n="officeAddressLabel">Office Address</label>
+              <input type="text" id="admin-office-address-input" class="auth-input" value="201-4, Building 30" />
+            </div>
+          </div>
+
+          <div class="auth-input-group" style="margin-bottom: 10px;">
+            <label class="auth-input-label" for="admin-office-hours-input" data-i18n="officeHoursOptionalLabel">Office Hours (Optional)</label>
+            <input type="text" id="admin-office-hours-input" class="auth-input" value="" />
+          </div>
+
+          <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+            <button type="button" class="btn-primary-action" id="btn-save-arc-distribution-settings" data-i18n="btnSaveArcDistributionSettings">💾 Save ARC Pick-Up Settings</button>
           </div>
         </div>
       </div>

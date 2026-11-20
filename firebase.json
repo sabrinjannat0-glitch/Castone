@@ -9,11 +9,14 @@
       "firebase.json",
       "firestore.rules",
       "firestore.indexes.json",
+      "**/.*",
+      "**/node_modules/**",
+      "tests/**",
       "package.json",
       "package-lock.json",
-      "tests/**",
-      "**/.*",
-      "**/node_modules/**"
+      "*.log",
+      "scripts/**",
+      "README*"
     ]
   },
   "emulators": {

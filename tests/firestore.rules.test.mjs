@@ -534,4 +534,127 @@ describe("KSU Compass Firestore Security Rules (Step 2)", () => {
     );
     await assertSucceeds(deleteDoc(doc(adminDb, "roster", "s0099")));
   });
+
+  it("11. Step 6 ARC self-reporting rules: student allowlist, valid arcStatus values, mentor/other-student/unauth denied, admin read all & portalConfig write", async () => {
+    const stu1Db = ksuUserDb("a2024691204");
+    const stu2Db = ksuUserDb("s0002");
+    const mentor1Db = ksuUserDb("m0001");
+    const unauth = unauthDb();
+    const adminDb = adminUserDb("uid_admin_fake_01");
+
+    // Student can update own checklist with allowlisted keys: tasks, arcStatus ('received' | 'not_received' | null), arcReportedAt, updatedAt
+    await assertSucceeds(
+      updateDoc(doc(stu1Db, "checklists", "a2024691204"), {
+        arcStatus: "not_received",
+        arcReportedAt: "2026-11-19T00:00:00.000Z",
+        tasks: { housing: true, arc: false },
+        updatedAt: "2026-11-19T00:00:00.000Z"
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(stu1Db, "checklists", "a2024691204"), {
+        arcStatus: "received",
+        arcReportedAt: "2026-11-19T01:00:00.000Z",
+        tasks: { housing: true, arc: true },
+        updatedAt: "2026-11-19T01:00:00.000Z"
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(stu1Db, "checklists", "a2024691204"), {
+        arcStatus: null,
+        tasks: { housing: true, arc: false },
+        updatedAt: "2026-11-19T02:00:00.000Z"
+      })
+    );
+
+    // Student cannot set any other arcStatus value
+    await assertFails(
+      updateDoc(doc(stu1Db, "checklists", "a2024691204"), {
+        arcStatus: "approved"
+      })
+    );
+    await assertFails(
+      updateDoc(doc(stu1Db, "checklists", "a2024691204"), {
+        arcStatus: "pending"
+      })
+    );
+    await assertFails(
+      updateDoc(doc(stu1Db, "checklists", "a2024691204"), {
+        arcStatus: "custom_value"
+      })
+    );
+
+    // Student cannot update non-allowlisted keys on own checklist (e.g., taskDocs, name, arbitrary key)
+    await assertFails(
+      updateDoc(doc(stu1Db, "checklists", "a2024691204"), {
+        taskDocs: { arc: { status: "approved" } }
+      })
+    );
+    await assertFails(
+      updateDoc(doc(stu1Db, "checklists", "a2024691204"), {
+        name: "Tampered Name"
+      })
+    );
+
+    // Student cannot edit another student's ARC status
+    await assertFails(
+      updateDoc(doc(stu1Db, "checklists", "s0002"), {
+        arcStatus: "received",
+        arcReportedAt: "2026-11-19T00:00:00.000Z"
+      })
+    );
+    await assertFails(
+      updateDoc(doc(stu2Db, "checklists", "a2024691204"), {
+        arcStatus: "not_received"
+      })
+    );
+
+    // Mentor cannot write arcStatus or arcReportedAt (even on an assigned student)
+    await assertFails(
+      updateDoc(doc(mentor1Db, "checklists", "a2024691204"), {
+        arcStatus: "received"
+      })
+    );
+    await assertFails(
+      updateDoc(doc(mentor1Db, "checklists", "a2024691204"), {
+        arcReportedAt: "2026-11-19T00:00:00.000Z"
+      })
+    );
+
+    // Unauthenticated is denied
+    await assertFails(getDoc(doc(unauth, "checklists", "a2024691204")));
+    await assertFails(
+      updateDoc(doc(unauth, "checklists", "a2024691204"), {
+        arcStatus: "received"
+      })
+    );
+    await assertFails(getDoc(doc(unauth, "settings", "portalConfig")));
+
+    // settings/portalConfig is admin-write only
+    await assertFails(
+      updateDoc(doc(stu1Db, "settings", "portalConfig"), {
+        arcDistributionDate: "2026-10-01"
+      })
+    );
+    await assertFails(
+      updateDoc(doc(mentor1Db, "settings", "portalConfig"), {
+        arcDistributionDate: "2026-10-01"
+      })
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(adminDb, "settings", "portalConfig"),
+        {
+          arcDistributionDate: "2026-10-15",
+          officeName: "Global Office",
+          officeAddress: "201-4, Building 30",
+          officeHours: ""
+        },
+        { merge: true }
+      )
+    );
+
+    // Admin can read all checklists
+    await assertSucceeds(getDocs(collection(adminDb, "checklists")));
+  });
 });

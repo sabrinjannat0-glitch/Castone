@@ -107,10 +107,16 @@ service cloud.firestore {
     }
 
     // 3. checklists/{docPersonId}:
-    // - Student: read/update own checklist (cannot change mentorId, role, createdAt); create own checklist only if mentorId matches roster
-    // - Mentor: read checklists where resource.data.mentorId == personId(); update only status/review fields (taskDocs, tasks, updatedAt)
+    // - Student: read own checklist; create own checklist only if mentorId matches roster and arcStatus is valid;
+    //   update only allowlisted keys (tasks, arcStatus in ['received', 'not_received', null], arcReportedAt, updatedAt)
+    // - Mentor: read checklists where resource.data.mentorId == personId(); update only status/review fields (taskDocs, tasks, updatedAt — cannot write arcStatus)
     // - Admin: full read/write
     match /checklists/{docPersonId} {
+      function isValidArcStatusField() {
+        return !('arcStatus' in request.resource.data)
+          || request.resource.data.arcStatus in ['received', 'not_received', null];
+      }
+
       allow get, list: if isAdmin()
         || (isStudent() && personId() == docPersonId)
         || (isMentor() && resource.data.mentorId == personId());
@@ -119,16 +125,18 @@ service cloud.firestore {
         || (
           isStudent()
           && personId() == docPersonId
-          && request.resource.data.mentorId == myRoster().mentorId
+          && request.resource.data.get('mentorId', '') == myRoster().get('mentorId', '')
+          && (!('role' in request.resource.data) || request.resource.data.role == 'student')
+          && request.resource.data.keys().hasOnly(['name', 'role', 'mentorId', 'tasks', 'arcStatus', 'arcReportedAt', 'createdAt', 'updatedAt'])
+          && isValidArcStatusField()
         );
 
       allow update: if isAdmin()
         || (
           isStudent()
           && personId() == docPersonId
-          && request.resource.data.mentorId == resource.data.mentorId
-          && (!('role' in resource.data) || request.resource.data.role == resource.data.role)
-          && (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tasks', 'arcStatus', 'arcReportedAt', 'updatedAt'])
+          && isValidArcStatusField()
         )
         || (
           isMentor()

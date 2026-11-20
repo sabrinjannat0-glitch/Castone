@@ -31,13 +31,79 @@ import { t, getLang, setLang, onLangChange, getTaskLabel } from "./i18n.js";
 // ============================================================
 // 1. CONSTANTS & GLOBAL STATE
 // ============================================================
+const FILES_ENABLED = false;
 const CORE_TASKS = ["housing", "arc", "phone", "bank", "insurance", "lms", "library", "transport"];
 const CYCLE_TOTAL_SESSIONS = 6;       // 6 reports/sessions across a 3-month cycle
 const CYCLE_MAX_MONTHS = 3;           // 3-month cycle structure
 const MONTH_MAX_SESSIONS = 2;         // 2 reports/sessions per month
 const ARC_WARNING_COOLDOWN_MS = 30000; // 30s debounce/cooldown window against duplicate clicks
+const DEFAULT_OFFICE_NAME = "Global Office";
+const DEFAULT_OFFICE_ADDRESS = "201-4, Building 30";
 const OFFICE_CONTACT_INFO =
   "Please visit the Global Office (Building 30, Room 201-4) with your student or mentor ID to reset your password.";
+
+function hasArcDistributionDatePassed(dateStr) {
+  const clean = String(dateStr || "").trim();
+  if (!clean) return false;
+  const match = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const startOfDay = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 0, 0, 0, 0);
+    if (Number.isNaN(startOfDay.getTime())) return false;
+    return Date.now() >= startOfDay.getTime();
+  }
+  const parsed = new Date(clean);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return Date.now() >= parsed.getTime();
+}
+
+function syncFilesEnabledVisibilityUI() {
+  const showDisplay = FILES_ENABLED ? "" : "none";
+  // 1. Student proof upload controls
+  document.querySelectorAll("#checklist .doc-btn, #checklist .doc-status-badge").forEach((el) => {
+    el.style.display = showDisplay;
+  });
+  const urgentUploadArcBtn = document.getElementById("btn-urgent-upload-arc");
+  if (urgentUploadArcBtn) urgentUploadArcBtn.style.display = showDisplay;
+  const taskDocInput = document.getElementById("task-doc-input");
+  if (taskDocInput && !FILES_ENABLED) {
+    taskDocInput.disabled = true;
+    taskDocInput.style.display = "none";
+  }
+
+  // 2. Mentor proof-review & monthly-report PDF upload controls
+  [
+    "mentor-open-report-btn",
+    "mentor-open-report-btn-2",
+    "mentor-reports-history-section",
+    "mentor-report-warning-banner",
+    "nav-mentor-report-btn"
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = showDisplay;
+  });
+  const mentorActivitySection = document.getElementById("mentor-activity-feed")?.closest(".recent-activity-section");
+  if (mentorActivitySection) mentorActivitySection.style.display = showDisplay;
+  const mentorReportKpiCard = document.getElementById("kpi-mentor-report-status")?.closest(".kpi-card-box");
+  if (mentorReportKpiCard) mentorReportKpiCard.style.display = showDisplay;
+
+  // 3. Admin file-proof review table, monthly report PDFs review screens, and report-warning buttons
+  [
+    "admin-arc-card",
+    "admin-reports-box",
+    "btn-attention-reports",
+    "doc-modal",
+    "monthly-report-modal",
+    "report-detail-modal"
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && !FILES_ENABLED) el.style.display = "none";
+  });
+
+  const adminFollowupBox = document.getElementById("admin-arc-followup-box");
+  if (adminFollowupBox) {
+    adminFollowupBox.style.display = "block";
+  }
+}
 
 // Default semester month keys (YYYY-MM):
 // - Spring = Mar–Jun (YYYY-03 .. YYYY-06)
@@ -181,6 +247,7 @@ function openPdfVaultDb() {
 }
 
 async function savePdfToVault(fileId, fileRecord) {
+  if (!FILES_ENABLED) return;
   if (!fileId || !fileRecord?.dataUrl) return;
   const idb = await openPdfVaultDb();
   if (idb) {
@@ -213,7 +280,7 @@ async function savePdfToVault(fileId, fileRecord) {
 }
 
 async function getPdfFromVault(fileId) {
-  if (!fileId) return null;
+  if (!FILES_ENABLED || !fileId) return null;
   const idb = await openPdfVaultDb();
   if (idb) {
     const found = await new Promise((resolve) => {
@@ -241,6 +308,7 @@ async function getPdfFromVault(fileId) {
 
 async function hydrateReportsWithVaultFiles(reportsArray) {
   if (!Array.isArray(reportsArray)) return [];
+  if (!FILES_ENABLED) return reportsArray;
   for (const rep of reportsArray) {
     if (!Array.isArray(rep.files)) continue;
     for (let i = 0; i < rep.files.length; i++) {
@@ -608,6 +676,10 @@ async function loadScopedChatsForCurrentUser(options = {}) {
 }
 
 async function dbSetDoc(colName, docId, data, merge = true, options = {}) {
+  if (!FILES_ENABLED && (colName === "monthlyReports" || colName === "reportFiles")) {
+    throw new Error("File uploads and PDF reports are disabled (FILES_ENABLED = false).");
+  }
+
   const key = String(docId);
   if (colName === "chats") {
     if (!isChatChannelAuthorizedForCurrentSession(key)) {
@@ -626,8 +698,14 @@ async function dbSetDoc(colName, docId, data, merge = true, options = {}) {
   }
 
   try {
-    // Keep Firestore document under 1 MiB limit by stripping oversized inline dataUrls from metadata doc when backed up in vault
     let cloudPayload = data;
+    if (!FILES_ENABLED && colName === "checklists" && cloudPayload && typeof cloudPayload === "object") {
+      if ("taskDocs" in cloudPayload) {
+        const { taskDocs: _omitted, ...rest } = cloudPayload;
+        cloudPayload = rest;
+      }
+    }
+    // Keep Firestore document under 1 MiB limit by stripping oversized inline dataUrls from metadata doc when backed up in vault
     if (colName === "monthlyReports" && Array.isArray(data.files)) {
       const approxLen = JSON.stringify(data).length;
       if (approxLen > 750000) {
@@ -642,6 +720,9 @@ async function dbSetDoc(colName, docId, data, merge = true, options = {}) {
           }))
         };
       }
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      throw new Error("Network is offline.");
     }
     await setDoc(doc(db, colName, key), cloudPayload, { merge });
     if (colName === "roster") {
@@ -665,6 +746,9 @@ async function dbSetDoc(colName, docId, data, merge = true, options = {}) {
 async function dbDeleteDoc(colName, docId, options = {}) {
   const key = String(docId);
   try {
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      throw new Error("Network is offline.");
+    }
     await deleteDoc(doc(db, colName, key));
     if (colName === "roster") {
       scopedRosterCache.delete(key.toLowerCase());
@@ -795,6 +879,9 @@ function isStudentUnassigned(student, activeMentorIdSet = getActiveMentorIdSet()
 }
 
 function fileToDataUrl(file) {
+  if (!FILES_ENABLED) {
+    return Promise.reject(new Error("File uploads are disabled."));
+  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -845,6 +932,17 @@ async function loadPortalConfig(options = {}) {
       typeof stored?.arcCustomMessage === "string" && stored.arcCustomMessage.trim()
         ? stored.arcCustomMessage.trim()
         : DEFAULT_ARC_BANNER_TEMPLATE,
+    arcDistributionDate:
+      typeof stored?.arcDistributionDate === "string" ? stored.arcDistributionDate.trim() : "",
+    officeName:
+      typeof stored?.officeName === "string" && stored.officeName.trim()
+        ? stored.officeName.trim()
+        : DEFAULT_OFFICE_NAME,
+    officeAddress:
+      typeof stored?.officeAddress === "string" && stored.officeAddress.trim()
+        ? stored.officeAddress.trim()
+        : DEFAULT_OFFICE_ADDRESS,
+    officeHours: typeof stored?.officeHours === "string" ? stored.officeHours.trim() : "",
     reportingMonths,
     reportingSemester,
     reportingAcademicYear,
@@ -873,6 +971,22 @@ async function savePortalConfig(partialUpdate, options = {}) {
       partialUpdate.arcCustomMessage !== undefined
         ? String(partialUpdate.arcCustomMessage || "").trim() || DEFAULT_ARC_BANNER_TEMPLATE
         : base.arcCustomMessage || DEFAULT_ARC_BANNER_TEMPLATE,
+    arcDistributionDate:
+      partialUpdate.arcDistributionDate !== undefined
+        ? String(partialUpdate.arcDistributionDate || "").trim()
+        : (base.arcDistributionDate || ""),
+    officeName:
+      partialUpdate.officeName !== undefined
+        ? String(partialUpdate.officeName || "").trim() || DEFAULT_OFFICE_NAME
+        : (base.officeName || DEFAULT_OFFICE_NAME),
+    officeAddress:
+      partialUpdate.officeAddress !== undefined
+        ? String(partialUpdate.officeAddress || "").trim() || DEFAULT_OFFICE_ADDRESS
+        : (base.officeAddress || DEFAULT_OFFICE_ADDRESS),
+    officeHours:
+      partialUpdate.officeHours !== undefined
+        ? String(partialUpdate.officeHours || "").trim()
+        : (base.officeHours || ""),
     reportingMonths: effectiveReportingMonths,
     reportingSemester:
       partialUpdate.reportingSemester !== undefined
@@ -1415,7 +1529,7 @@ function renderTopbarForRole(role) {
       <button type="button" class="nav-tab-btn active" data-scroll-target="mentor-dashboard-card">${iconHome}<span>${escapeHtml(t("navOverview"))}</span></button>
       <button type="button" class="nav-tab-btn" data-scroll-target="mentee-list">${iconUsers}<span>${escapeHtml(t("navMentees"))}</span></button>
       <button type="button" class="nav-tab-btn" id="nav-mentor-msg-btn">${iconMsg}<span>${escapeHtml(t("navMessages"))}</span></button>
-      <button type="button" class="nav-tab-btn" id="nav-mentor-report-btn">${iconDoc}<span>${escapeHtml(t("navReports"))}</span></button>
+      ${FILES_ENABLED ? `<button type="button" class="nav-tab-btn" id="nav-mentor-report-btn">${iconDoc}<span>${escapeHtml(t("navReports"))}</span></button>` : ""}
     `;
     document.getElementById("nav-mentor-msg-btn")?.addEventListener("click", () => {
       openMessengerDrawer();
@@ -1427,24 +1541,27 @@ function renderTopbarForRole(role) {
       { label: t("navOverview"), icon: iconHome, scrollTarget: "mentor-dashboard-card", active: true },
       { label: t("navMentees"), icon: iconUsers, scrollTarget: "mentee-list" },
       { label: t("navMessages"), icon: iconMsg, action: () => openMessengerDrawer() },
-      { label: t("navReports"), icon: iconDoc, action: () => document.getElementById("mentor-open-report-btn")?.click() }
+      ...(FILES_ENABLED
+        ? [{ label: t("navReports"), icon: iconDoc, action: () => document.getElementById("mentor-open-report-btn")?.click() }]
+        : [])
     ];
   } else if (role === "admin") {
     const tagText = t("brandPortalTagAdmin");
     if (navPortalTag) navPortalTag.textContent = tagText;
     if (mobileRoleTagEl) mobileRoleTagEl.textContent = tagText;
+    const arcTargetId = FILES_ENABLED ? "admin-arc-card" : "admin-arc-followup-box";
     navCenterTabs.innerHTML = `
       <button type="button" class="nav-tab-btn active" data-scroll-target="stat-grid">${iconHome}<span>${escapeHtml(t("navOverview"))}</span></button>
       <button type="button" class="nav-tab-btn" data-scroll-target="admin-people-card">${iconUsers}<span>${escapeHtml(t("navPeople"))}</span></button>
-      <button type="button" class="nav-tab-btn" data-scroll-target="admin-arc-card">${iconDoc}<span>${escapeHtml(t("navArcReviews"))}</span></button>
-      <button type="button" class="nav-tab-btn" data-scroll-target="admin-reports-box">${iconDoc}<span>${escapeHtml(t("navReports"))}</span></button>
+      <button type="button" class="nav-tab-btn" data-scroll-target="${arcTargetId}">${iconDoc}<span>${escapeHtml(t("navArcReviews"))}</span></button>
+      ${FILES_ENABLED ? `<button type="button" class="nav-tab-btn" data-scroll-target="admin-reports-box">${iconDoc}<span>${escapeHtml(t("navReports"))}</span></button>` : ""}
       <button type="button" class="nav-tab-btn" data-scroll-target="admin-settings-box">${iconGear}<span>${escapeHtml(t("navSettings"))}</span></button>
     `;
     mobileItems = [
       { label: t("navOverview"), icon: iconHome, scrollTarget: "stat-grid", active: true },
       { label: t("navPeople"), icon: iconUsers, scrollTarget: "admin-people-card" },
-      { label: t("navArcReviews"), icon: iconDoc, scrollTarget: "admin-arc-card" },
-      { label: t("navReports"), icon: iconDoc, scrollTarget: "admin-reports-box" },
+      { label: t("navArcReviews"), icon: iconDoc, scrollTarget: arcTargetId },
+      ...(FILES_ENABLED ? [{ label: t("navReports"), icon: iconDoc, scrollTarget: "admin-reports-box" }] : []),
       { label: t("navSettings"), icon: iconGear, scrollTarget: "admin-settings-box" },
       { label: t("navMessenger"), icon: iconMsg, action: () => openMessengerDrawer() }
     ];
@@ -1492,6 +1609,7 @@ function renderTopbarForRole(role) {
 }
 
 function showSection(section) {
+  syncFilesEnabledVisibilityUI();
   if (loginArea) loginArea.style.display = section === "login" ? "grid" : "none";
   if (checklistCard) checklistCard.style.display = section === "student" ? "block" : "none";
   if (mentorDashboardCard) mentorDashboardCard.style.display = section === "mentor" ? "block" : "none";
@@ -1817,12 +1935,17 @@ async function handleIdLogin(role) {
 
     if (role === "student") {
       showSection("student");
-      await loadStudentDashboard(personId, displayName);
+      await Promise.all([
+        loadStudentDashboard(personId, displayName),
+        checkAndRenderPasswordReminderBanner(personId)
+      ]);
     } else {
       showSection("mentor");
-      await loadMentorDashboard(personId, displayName);
+      await Promise.all([
+        loadMentorDashboard(personId, displayName),
+        checkAndRenderPasswordReminderBanner(personId)
+      ]);
     }
-    await checkAndRenderPasswordReminderBanner(personId);
   } finally {
     isLoginInProgress = false;
   }
@@ -1914,6 +2037,17 @@ function clearAllCachedUserData() {
   }
   const pwBanner = document.getElementById("password-reminder-banner");
   if (pwBanner) pwBanner.style.display = "none";
+  const stuPrompt = document.getElementById("student-arc-pickup-prompt");
+  if (stuPrompt) {
+    stuPrompt.style.display = "none";
+    stuPrompt.innerHTML = "";
+  }
+  const menteeListEl = document.getElementById("mentee-list");
+  if (menteeListEl) menteeListEl.innerHTML = "";
+  const adminFollowupTbody = document.getElementById("admin-arc-not-received-tbody");
+  if (adminFollowupTbody) adminFollowupTbody.innerHTML = "";
+  const rosterListEl = document.getElementById("roster-students-list");
+  if (rosterListEl) rosterListEl.innerHTML = "";
   ["student-password", "mentor-password", "admin-password"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.value = "";
@@ -1963,11 +2097,16 @@ onAuthStateChanged(auth, async (user) => {
 
       showSection(role);
       if (role === "student") {
-        await loadStudentDashboard(personId, displayName);
+        await Promise.all([
+          loadStudentDashboard(personId, displayName),
+          checkAndRenderPasswordReminderBanner(personId)
+        ]);
       } else {
-        await loadMentorDashboard(personId, displayName);
+        await Promise.all([
+          loadMentorDashboard(personId, displayName),
+          checkAndRenderPasswordReminderBanner(personId)
+        ]);
       }
-      await checkAndRenderPasswordReminderBanner(personId);
       return;
     } catch (_) {
       clearAllCachedUserData();
@@ -2012,6 +2151,7 @@ onAuthStateChanged(auth, async (user) => {
 // 6. STUDENT PORTAL LOGIC (SCREENSHOTS 2 & 3)
 // ============================================================
 async function loadStudentDashboard(studentId, studentName) {
+  syncFilesEnabledVisibilityUI();
   const welcomeEl = document.getElementById("student-welcome-heading");
   if (welcomeEl) welcomeEl.textContent = t("welcomeUser", { name: studentName });
 
@@ -2025,16 +2165,164 @@ async function loadStudentDashboard(studentId, studentName) {
   const studentMentorId = normalizeMentorIdValue(
     checklistDoc?.mentorId !== undefined ? checklistDoc.mentorId : safeRoster.mentorId
   );
+  let checklistExists = Boolean(checklistDoc);
   const checklistData = checklistDoc || {
     name: studentName,
     role: "student",
     mentorId: studentMentorId,
     tasks: {},
-    taskDocs: {}
+    taskDocs: {},
+    arcStatus: null,
+    arcReportedAt: null
   };
 
-  const tasks = checklistData.tasks || {};
+  const tasks = { ...(checklistData.tasks || {}) };
   const taskDocs = checklistData.taskDocs || {};
+  let currentArcStatus =
+    checklistData.arcStatus === "received" || checklistData.arcStatus === "not_received"
+      ? checklistData.arcStatus
+      : tasks.arc
+      ? "received"
+      : null;
+  let currentArcReportedAt = checklistData.arcReportedAt || null;
+  if (currentArcStatus === "received") {
+    tasks.arc = true;
+  }
+
+  // Strictly writes only allowlisted keys on student update: ['tasks', 'arcStatus', 'arcReportedAt', 'updatedAt']
+  const persistStudentChecklistUpdate = async (nextTasks, nextArcStatus, nextArcReportedAt, onRetry) => {
+    const nowIso = new Date().toISOString();
+    const payload = checklistExists
+      ? {
+          tasks: nextTasks,
+          arcStatus: nextArcStatus,
+          arcReportedAt: nextArcReportedAt,
+          updatedAt: nowIso
+        }
+      : {
+          name: studentName,
+          role: "student",
+          mentorId: studentMentorId,
+          tasks: nextTasks,
+          arcStatus: nextArcStatus,
+          arcReportedAt: nextArcReportedAt,
+          createdAt: nowIso,
+          updatedAt: nowIso
+        };
+    await dbSetDoc("checklists", studentId, payload, true, { onRetry });
+    checklistExists = true;
+  };
+
+  const syncArcCheckboxRowDOM = () => {
+    const arcRow = document.querySelector('#checklist .task-item-row[data-id="arc"]');
+    if (!arcRow) return;
+    const arcCb = arcRow.querySelector(".task-cb");
+    const isArcDone = Boolean(tasks.arc);
+    if (arcCb) arcCb.checked = isArcDone;
+    arcRow.classList.toggle("completed", isArcDone);
+  };
+
+  const renderStudentArcPickupPrompt = () => {
+    const promptBox = document.getElementById("student-arc-pickup-prompt");
+    if (!promptBox) return;
+
+    const activeConfig = portalConfigCache || portalConfig;
+    const distDatePassed = hasArcDistributionDatePassed(activeConfig?.arcDistributionDate);
+
+    // Hidden if arcDistributionDate is not set, has not passed, or student already received ARC
+    if (!distDatePassed || currentArcStatus === "received") {
+      promptBox.style.display = "none";
+      promptBox.innerHTML = "";
+      return;
+    }
+
+    const officeName =
+      typeof activeConfig?.officeName === "string" && activeConfig.officeName.trim()
+        ? activeConfig.officeName.trim()
+        : DEFAULT_OFFICE_NAME;
+    const officeAddress =
+      typeof activeConfig?.officeAddress === "string" && activeConfig.officeAddress.trim()
+        ? activeConfig.officeAddress.trim()
+        : DEFAULT_OFFICE_ADDRESS;
+    const officeHours =
+      typeof activeConfig?.officeHours === "string" ? activeConfig.officeHours.trim() : "";
+
+    const visitNoticeText = officeHours
+      ? t("arcVisitOfficeNoticeWithHours", {
+          officeName,
+          officeAddress,
+          officeHours
+        })
+      : t("arcVisitOfficeNotice", {
+          officeName,
+          officeAddress
+        });
+
+    promptBox.style.display = "block";
+    promptBox.innerHTML = `
+      <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 12px;">
+        <div style="font-size: 12.5px; font-weight: 700; color: #0f172a; margin-bottom: 8px;">
+          ${escapeHtml(t("arcPromptQuestion"))}
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <button type="button" class="btn-primary-action" id="btn-student-arc-got-it" style="padding: 6px 12px; font-size: 12px;">
+            ${escapeHtml(t("btnArcGotMyArc"))}
+          </button>
+          <button type="button" class="btn-table-action" id="btn-student-arc-not-received" style="padding: 6px 12px; font-size: 12px;">
+            ${escapeHtml(t("btnArcNotReceivedYet"))}
+          </button>
+        </div>
+        ${
+          currentArcStatus === "not_received"
+            ? `
+              <div id="student-arc-office-visit-notice" style="margin-top: 10px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; font-size: 12.5px; color: #92400e;">
+                <p style="margin: 0 0 8px; font-weight: 600;">${escapeHtml(visitNoticeText)}</p>
+                <button type="button" class="btn-primary-action" id="btn-student-arc-got-it-now" style="padding: 5px 12px; font-size: 12px;">
+                  ${escapeHtml(t("btnArcGotItNow"))}
+                </button>
+              </div>
+            `
+            : ""
+        }
+      </div>
+    `;
+
+    const handleMarkArcReceived = async () => {
+      const nowIso = new Date().toISOString();
+      const nextTasks = { ...tasks, arc: true };
+      try {
+        await persistStudentChecklistUpdate(nextTasks, "received", nowIso, handleMarkArcReceived);
+        tasks.arc = true;
+        currentArcStatus = "received";
+        currentArcReportedAt = nowIso;
+        syncArcCheckboxRowDOM();
+        updateStudentProgressUI(tasks);
+        renderStudentArcDeadlineAndBanner(tasks, taskDocs, portalConfigCache || portalConfig);
+        renderStudentArcPickupPrompt();
+        filterStudentTasks();
+      } catch (_) {}
+    };
+
+    const handleMarkArcNotReceived = async () => {
+      const nowIso = new Date().toISOString();
+      const nextTasks = { ...tasks, arc: false };
+      try {
+        await persistStudentChecklistUpdate(nextTasks, "not_received", nowIso, handleMarkArcNotReceived);
+        tasks.arc = false;
+        currentArcStatus = "not_received";
+        currentArcReportedAt = nowIso;
+        syncArcCheckboxRowDOM();
+        updateStudentProgressUI(tasks);
+        renderStudentArcDeadlineAndBanner(tasks, taskDocs, portalConfigCache || portalConfig);
+        renderStudentArcPickupPrompt();
+        filterStudentTasks();
+      } catch (_) {}
+    };
+
+    document.getElementById("btn-student-arc-got-it")?.addEventListener("click", handleMarkArcReceived);
+    document.getElementById("btn-student-arc-got-it-now")?.addEventListener("click", handleMarkArcReceived);
+    document.getElementById("btn-student-arc-not-received")?.addEventListener("click", handleMarkArcNotReceived);
+  };
 
   // Update Each Task Row
   let completedCount = 0;
@@ -2059,22 +2347,29 @@ async function loadStudentDashboard(studentId, studentName) {
 
         const performTaskToggle = async () => {
           const nextTasks = { ...tasks, [taskId]: desiredChecked };
-          const payload = {
-            name: studentName,
-            mentorId: studentMentorId,
-            tasks: nextTasks,
-            taskDocs,
-            updatedAt: new Date().toISOString()
-          };
-          if (checklistDoc?.role !== undefined) payload.role = checklistDoc.role;
-          if (checklistDoc?.createdAt !== undefined) payload.createdAt = checklistDoc.createdAt;
+          let nextArcStatus = currentArcStatus;
+          let nextArcReportedAt = currentArcReportedAt;
+          if (taskId === "arc") {
+            if (!desiredChecked) {
+              // If a student unticks the ARC checkbox, reset arcStatus to null
+              nextArcStatus = null;
+              nextArcReportedAt = null;
+            } else {
+              // Keep arcStatus consistent with the ARC checkbox
+              nextArcStatus = "received";
+              nextArcReportedAt = new Date().toISOString();
+            }
+          }
           try {
-            await dbSetDoc("checklists", studentId, payload, true, { onRetry: performTaskToggle });
+            await persistStudentChecklistUpdate(nextTasks, nextArcStatus, nextArcReportedAt, performTaskToggle);
             tasks[taskId] = desiredChecked;
+            currentArcStatus = nextArcStatus;
+            currentArcReportedAt = nextArcReportedAt;
             cb.checked = desiredChecked;
             row.classList.toggle("completed", desiredChecked);
             updateStudentProgressUI(tasks);
             renderStudentArcDeadlineAndBanner(tasks, taskDocs, portalConfigCache || portalConfig);
+            renderStudentArcPickupPrompt();
             filterStudentTasks();
           } catch (_) {
             cb.checked = prevChecked;
@@ -2090,7 +2385,7 @@ async function loadStudentDashboard(studentId, studentName) {
 
     const docInfo = taskDocs[taskId];
     if (statusBadge) {
-      if (docInfo && docInfo.status) {
+      if (FILES_ENABLED && docInfo && docInfo.status) {
         const st = docInfo.status; // 'pending' | 'approved' | 'rejected'
         statusBadge.className = `doc-status-badge status-pill-badge ${st}`;
         statusBadge.textContent =
@@ -2104,30 +2399,37 @@ async function loadStudentDashboard(studentId, studentName) {
     }
 
     if (docBtn) {
-      if (docInfo && docInfo.dataUrl) {
-        docBtn.textContent = `👁️ ${t("btnViewProof")}`;
+      if (!FILES_ENABLED) {
+        docBtn.style.display = "none";
       } else {
-        docBtn.textContent = taskId === "arc" ? `⇪ ${t("btnUploadProof")}` : `⇪ ${t("btnAddProof")}`;
-      }
-      docBtn.onclick = () => {
+        docBtn.style.display = "";
         if (docInfo && docInfo.dataUrl) {
-          openDocumentModal({
-            studentId,
-            studentName,
-            taskId,
-            docInfo,
-            viewerRole: "student"
-          });
+          docBtn.textContent = `👁️ ${t("btnViewProof")}`;
         } else {
-          pendingUploadTaskId = taskId;
-          document.getElementById("task-doc-input")?.click();
+          docBtn.textContent = taskId === "arc" ? `⇪ ${t("btnUploadProof")}` : `⇪ ${t("btnAddProof")}`;
         }
-      };
+        docBtn.onclick = () => {
+          if (!FILES_ENABLED) return;
+          if (docInfo && docInfo.dataUrl) {
+            openDocumentModal({
+              studentId,
+              studentName,
+              taskId,
+              docInfo,
+              viewerRole: "student"
+            });
+          } else {
+            pendingUploadTaskId = taskId;
+            document.getElementById("task-doc-input")?.click();
+          }
+        };
+      }
     }
   });
 
   updateStudentProgressUI(tasks);
   renderStudentArcDeadlineAndBanner(tasks, taskDocs, portalConfig);
+  renderStudentArcPickupPrompt();
   filterStudentTasks();
 
   // Load Assigned Mentor Info (Verify mentor actually exists in active roster)
@@ -2233,7 +2535,7 @@ function renderStudentArcDeadlineAndBanner(tasks, taskDocs, config) {
 }
 
 document.getElementById("btn-urgent-upload-arc")?.addEventListener("click", () => {
-  if (currentRole !== "student") return;
+  if (!FILES_ENABLED || currentRole !== "student") return;
   pendingUploadTaskId = "arc";
   document.getElementById("task-doc-input")?.click();
 });
@@ -2280,6 +2582,7 @@ document.getElementById("checklist-task-filter")?.addEventListener("change", fil
 
 // Student Task Proof Upload Handler
 document.getElementById("task-doc-input")?.addEventListener("change", async (e) => {
+  if (!FILES_ENABLED) return;
   const file = e.target.files?.[0];
   e.target.value = "";
   if (!file || !pendingUploadTaskId || !currentUserId) return;
@@ -2380,6 +2683,7 @@ document.getElementById("btn-view-arc-guide-upnext")?.addEventListener("click", 
 // 7. MENTOR PORTAL LOGIC (SCREENSHOTS 4 & 5 + MONTHLY REPORTS)
 // ============================================================
 async function loadMentorDashboard(mentorId, mentorName) {
+  syncFilesEnabledVisibilityUI();
   // Strictly ensure Student ARC urgency banner is never visible on Mentor view
   const stuArcBanner = document.getElementById("student-arc-urgent-banner");
   if (stuArcBanner) stuArcBanner.style.display = "none";
@@ -2387,7 +2691,7 @@ async function loadMentorDashboard(mentorId, mentorName) {
   const mentorIdLower = String(mentorId || "").trim().toLowerCase();
   const [assignedChecklists, myReportsRaw] = await Promise.all([
     dbQuery("checklists", where("mentorId", "==", mentorIdLower)),
-    dbQuery("monthlyReports", where("mentorId", "==", mentorIdLower)),
+    FILES_ENABLED ? dbQuery("monthlyReports", where("mentorId", "==", mentorIdLower)) : Promise.resolve([]),
     loadPortalConfig()
   ]);
 
@@ -2434,17 +2738,19 @@ async function loadMentorDashboard(mentorId, mentorName) {
       needAttentionCount++;
     }
 
-    Object.entries(taskDocs).forEach(([tKey, dVal]) => {
-      if (dVal && dVal.uploadedAt && tKey !== "arc") {
-        activityEvents.push({
-          studentId: stu._id,
-          studentName: stu.name || stu._id,
-          taskId: tKey,
-          docInfo: dVal,
-          timestamp: dVal.uploadedAt
-        });
-      }
-    });
+    if (FILES_ENABLED) {
+      Object.entries(taskDocs).forEach(([tKey, dVal]) => {
+        if (dVal && dVal.uploadedAt && tKey !== "arc") {
+          activityEvents.push({
+            studentId: stu._id,
+            studentName: stu.name || stu._id,
+            taskId: tKey,
+            docInfo: dVal,
+            timestamp: dVal.uploadedAt
+          });
+        }
+      });
+    }
   });
 
   // Load Mentor's Own Submitted Reports & 1:1 Session Cycle Progress
@@ -2505,51 +2811,57 @@ async function loadMentorDashboard(mentorId, mentorName) {
           });
   }
 
-  // Render Targeted Monthly Report Warning Banner ONLY if this mentor was targeted AND still has < 2 files for that month
+  // Render Targeted Monthly Report Warning Banner ONLY if FILES_ENABLED and this mentor was targeted AND still has < 2 files for that month
   const mentorWarnBannerEl = document.getElementById("mentor-report-warning-banner");
   if (mentorWarnBannerEl) {
-    const warningsMap = portalConfigCache?.mentorReportWarnings || {};
-    const myIdLower = String(mentorId || "").toLowerCase();
-    const activeWarningsForMe = Object.entries(warningsMap).filter(([mKey, wObj]) => {
-      if (!wObj || !Array.isArray(wObj.targetMentorIds)) return false;
-      const isTargeted = wObj.targetMentorIds.some((tid) => String(tid).toLowerCase() === myIdLower);
-      if (!isTargeted) return false;
-      const monthCount = getMentorMonthAggregatedData(mentorId, mKey, myReports).filesCount;
-      return monthCount < MONTH_MAX_SESSIONS;
-    });
-
-    if (activeWarningsForMe.length === 0) {
+    if (!FILES_ENABLED) {
       mentorWarnBannerEl.style.display = "none";
       mentorWarnBannerEl.innerHTML = "";
     } else {
-      const [warnMonthKey, warnData] = activeWarningsForMe[activeWarningsForMe.length - 1];
-      const warnMonthFiles = getMentorMonthAggregatedData(mentorId, warnMonthKey, myReports).filesCount;
-      const warnGroupLabel = getMonthGroupDisplayName(warnMonthKey);
-      const warnMsg = warnData.message || t("defaultMentorReportWarningMsg");
-
-      mentorWarnBannerEl.style.display = "flex";
-      mentorWarnBannerEl.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span style="font-size: 20px;">⚠️</span>
-          <div>
-            <strong style="display: block; font-size: 14px; color: #92400e;">${escapeHtml(warnMsg)}</strong>
-            <span style="font-size: 12px; color: #b45309;">
-              ${escapeHtml(t("mentorWarnQuotaPrefix", { group: warnGroupLabel, month: warnMonthKey }))} <strong>${escapeHtml(t("filesSubmittedCount", { count: warnMonthFiles, max: MONTH_MAX_SESSIONS }))}</strong>
-            </span>
-          </div>
-        </div>
-        <button type="button" class="btn-primary-action" id="btn-mentor-warn-submit-now" style="padding: 7px 14px; font-size: 12.5px;">
-          ${escapeHtml(t("btnUploadMonthlyReportNow"))}
-        </button>
-      `;
-
-      document.getElementById("btn-mentor-warn-submit-now")?.addEventListener("click", async () => {
-        const modal = document.getElementById("monthly-report-modal");
-        const monthInput = document.getElementById("report-month-input");
-        if (monthInput) monthInput.value = warnMonthKey;
-        if (modal) modal.style.display = "flex";
-        await refreshMentorReportModalState();
+      const warningsMap = portalConfigCache?.mentorReportWarnings || {};
+      const myIdLower = String(mentorId || "").toLowerCase();
+      const activeWarningsForMe = Object.entries(warningsMap).filter(([mKey, wObj]) => {
+        if (!wObj || !Array.isArray(wObj.targetMentorIds)) return false;
+        const isTargeted = wObj.targetMentorIds.some((tid) => String(tid).toLowerCase() === myIdLower);
+        if (!isTargeted) return false;
+        const monthCount = getMentorMonthAggregatedData(mentorId, mKey, myReports).filesCount;
+        return monthCount < MONTH_MAX_SESSIONS;
       });
+
+      if (activeWarningsForMe.length === 0) {
+        mentorWarnBannerEl.style.display = "none";
+        mentorWarnBannerEl.innerHTML = "";
+      } else {
+        const [warnMonthKey, warnData] = activeWarningsForMe[activeWarningsForMe.length - 1];
+        const warnMonthFiles = getMentorMonthAggregatedData(mentorId, warnMonthKey, myReports).filesCount;
+        const warnGroupLabel = getMonthGroupDisplayName(warnMonthKey);
+        const warnMsg = warnData.message || t("defaultMentorReportWarningMsg");
+
+        mentorWarnBannerEl.style.display = "flex";
+        mentorWarnBannerEl.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 20px;">⚠️</span>
+            <div>
+              <strong style="display: block; font-size: 14px; color: #92400e;">${escapeHtml(warnMsg)}</strong>
+              <span style="font-size: 12px; color: #b45309;">
+                ${escapeHtml(t("mentorWarnQuotaPrefix", { group: warnGroupLabel, month: warnMonthKey }))} <strong>${escapeHtml(t("filesSubmittedCount", { count: warnMonthFiles, max: MONTH_MAX_SESSIONS }))}</strong>
+              </span>
+            </div>
+          </div>
+          <button type="button" class="btn-primary-action" id="btn-mentor-warn-submit-now" style="padding: 7px 14px; font-size: 12.5px;">
+            ${escapeHtml(t("btnUploadMonthlyReportNow"))}
+          </button>
+        `;
+
+        document.getElementById("btn-mentor-warn-submit-now")?.addEventListener("click", async () => {
+          if (!FILES_ENABLED) return;
+          const modal = document.getElementById("monthly-report-modal");
+          const monthInput = document.getElementById("report-month-input");
+          if (monthInput) monthInput.value = warnMonthKey;
+          if (modal) modal.style.display = "flex";
+          await refreshMentorReportModalState();
+        });
+      }
     }
   }
 
@@ -2572,7 +2884,7 @@ async function loadMentorDashboard(mentorId, mentorName) {
 
   // Render Mentor's Permanent Submitted Reports History (Grouped by Month, Append-Only, Never Overwritten)
   const ownReportsEl = document.getElementById("mentor-own-reports-list");
-  if (ownReportsEl) {
+  if (ownReportsEl && FILES_ENABLED) {
     if (myReports.length === 0) {
       ownReportsEl.innerHTML = `<div style="padding: 16px; text-align: center; color: #94a3b8; font-size: 13px;">${escapeHtml(t("noReportsSubmittedYet", { total: CYCLE_TOTAL_SESSIONS }))}</div>`;
     } else {
@@ -2640,7 +2952,7 @@ async function loadMentorDashboard(mentorId, mentorName) {
 
   // Render Recent Activity Feed (Non-ARC mentee updates only)
   const feedEl = document.getElementById("mentor-activity-feed");
-  if (feedEl) {
+  if (feedEl && FILES_ENABLED) {
     if (activityEvents.length === 0) {
       feedEl.innerHTML = `<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 13px;">${escapeHtml(t("noRecentMenteeActivity"))}</div>`;
     } else {
@@ -2665,6 +2977,7 @@ async function loadMentorDashboard(mentorId, mentorName) {
 
       feedEl.querySelectorAll("[data-review-stu]").forEach((btn) => {
         btn.addEventListener("click", () => {
+          if (!FILES_ENABLED) return;
           const sId = btn.getAttribute("data-review-stu");
           const tId = btn.getAttribute("data-review-task");
           const cl = checklistMap[sId];
@@ -2723,16 +3036,19 @@ function renderMentorStudentCards(students, checklistMap) {
         .map((tId) => {
           const isDone = Boolean(tasks[tId]);
           const dInfo = taskDocs[tId];
-          let actionHtml = `<span style="font-size: 11.5px; color: #94a3b8;">${escapeHtml(t("noProof"))}</span>`;
-          if (dInfo && dInfo.dataUrl) {
-            const stRaw = dInfo.status || "pending";
-            const stLabel =
-              stRaw === "approved"
-                ? t("statusApproved")
-                : stRaw === "rejected"
-                ? t("statusRejected")
-                : t("statusPending");
-            actionHtml = `<button type="button" class="btn-table-action mentor-doc-review-btn" data-stu="${escapeHtml(stu._id)}" data-task="${escapeHtml(tId)}" style="padding: 3px 8px; font-size: 11px;">${escapeHtml(t("reviewWithStatus", { status: stLabel }))}</button>`;
+          let actionHtml = "";
+          if (FILES_ENABLED) {
+            actionHtml = `<span style="font-size: 11.5px; color: #94a3b8;">${escapeHtml(t("noProof"))}</span>`;
+            if (dInfo && dInfo.dataUrl) {
+              const stRaw = dInfo.status || "pending";
+              const stLabel =
+                stRaw === "approved"
+                  ? t("statusApproved")
+                  : stRaw === "rejected"
+                  ? t("statusRejected")
+                  : t("statusPending");
+              actionHtml = `<button type="button" class="btn-table-action mentor-doc-review-btn" data-stu="${escapeHtml(stu._id)}" data-task="${escapeHtml(tId)}" style="padding: 3px 8px; font-size: 11px;">${escapeHtml(t("reviewWithStatus", { status: stLabel }))}</button>`;
+            }
           }
           return `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px dashed #e2e8f0; font-size: 12.5px;">
@@ -2799,6 +3115,7 @@ function renderMentorStudentCards(students, checklistMap) {
 
   container.querySelectorAll(".mentor-doc-review-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (!FILES_ENABLED) return;
       const sId = btn.getAttribute("data-stu");
       const tId = btn.getAttribute("data-task");
       const cl = checklistMap[sId];
@@ -2870,6 +3187,7 @@ function collectSelectedMentorReportFiles() {
 }
 
 async function refreshMentorReportModalState() {
+  if (!FILES_ENABLED) return;
   const sessionsInput = document.getElementById("report-sessions-input");
   const monthInput = document.getElementById("report-month-input");
   const infoBanner = document.getElementById("modal-mentor-cycle-info");
@@ -3067,6 +3385,7 @@ async function refreshMentorReportModalState() {
 });
 
 async function openMentorReportModal() {
+  if (!FILES_ENABLED) return;
   const modal = document.getElementById("monthly-report-modal");
   const monthInput = document.getElementById("report-month-input");
 
@@ -3105,6 +3424,7 @@ async function openMentorReportModal() {
 
 document.getElementById("monthly-report-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!FILES_ENABLED) return;
   const configuredMonths = getConfiguredReportingMonths();
   const month = document.getElementById("report-month-input")?.value || configuredMonths[0];
   const title = (document.getElementById("report-title-input")?.value || "").trim();
@@ -3311,10 +3631,11 @@ document.getElementById("monthly-report-form")?.addEventListener("submit", async
 // 8. ADMIN PORTAL LOGIC (SCREENSHOTS 6, 7, 8 + COMBINED FEATURES)
 // ============================================================
 async function loadAdminDashboard() {
+  syncFilesEnabledVisibilityUI();
   const [allRoster, allChecklists, allReports, rawAnnouncements] = await Promise.all([
     dbGetAll("roster"),
     dbGetAll("checklists"),
-    dbGetAll("monthlyReports"),
+    FILES_ENABLED ? dbGetAll("monthlyReports") : Promise.resolve([]),
     dbGetAll("announcements"),
     loadPortalConfig()
   ]);
@@ -3368,6 +3689,7 @@ function getPendingArcStudentsCount() {
 }
 
 function renderAdminAll() {
+  syncFilesEnabledVisibilityUI();
   const totalStudents = adminRosterStudents.length;
   const totalMentors = adminRosterMentors.length;
 
@@ -3376,6 +3698,10 @@ function renderAdminAll() {
   let fullyCompletedStudents = 0;
   let missingArcStudents = 0;
   let pendingArcProofsCount = 0;
+  let selfReportedArcReceivedCount = 0;
+  let selfReportedArcNotReceivedCount = 0;
+  let selfReportedArcNoAnswerCount = 0;
+  const distDatePassed = hasArcDistributionDatePassed(portalConfigCache?.arcDistributionDate);
 
   adminRosterStudents.forEach((stu) => {
     const cl = adminChecklistsMap[stu._id] || { tasks: {}, taskDocs: {} };
@@ -3394,12 +3720,22 @@ function renderAdminAll() {
     if (arcDoc && (arcDoc.status || "pending") === "pending") {
       pendingArcProofsCount++;
     }
+
+    if (cl.arcStatus === "received") {
+      selfReportedArcReceivedCount++;
+    } else if (cl.arcStatus === "not_received") {
+      selfReportedArcNotReceivedCount++;
+    } else if (distDatePassed) {
+      selfReportedArcNoAnswerCount++;
+    }
   });
 
   const avgCompletionPct = totalStudents > 0 ? Math.round(totalPctSum / totalStudents) : 0;
   const activeMentorIdSet = getActiveMentorIdSet(adminRosterMentors);
   const unassignedStudents = adminRosterStudents.filter((s) => isStudentUnassigned(s, activeMentorIdSet));
-  const pendingReportsCount = adminReportsList.filter((r) => r.status !== "reviewed").length;
+  const pendingReportsCount = FILES_ENABLED
+    ? adminReportsList.filter((r) => r.status !== "reviewed").length
+    : 0;
   const avgStudentsPerMentor =
     totalMentors > 0 ? (totalStudents / totalMentors).toFixed(1).replace(/\.0$/, "") : "0";
 
@@ -3410,6 +3746,7 @@ function renderAdminAll() {
   const elCompSub = document.getElementById("kpi-admin-completion-sub");
   const elArcQueue = document.getElementById("kpi-admin-arc-queue");
   const elArcSub = document.getElementById("kpi-admin-arc-sub");
+  const elArcLabel = elArcQueue?.closest(".kpi-content-col")?.querySelector(".kpi-label-text");
   const elMentors = document.getElementById("kpi-admin-active-mentors");
   const elMentorsSub = document.getElementById("kpi-admin-mentors-sub");
 
@@ -3422,15 +3759,29 @@ function renderAdminAll() {
       total: totalStudents
     });
   }
-  if (elArcQueue) elArcQueue.textContent = String(pendingArcProofsCount);
-  if (elArcSub) elArcSub.textContent = t("adminPendingReviewCount", { count: pendingArcProofsCount });
+  if (!FILES_ENABLED) {
+    if (elArcLabel) {
+      elArcLabel.setAttribute("data-i18n", "kpiArcNotReceivedTitle");
+      elArcLabel.textContent = t("kpiArcNotReceivedTitle");
+    }
+    if (elArcQueue) elArcQueue.textContent = String(selfReportedArcNotReceivedCount);
+    if (elArcSub) {
+      elArcSub.textContent = t("kpiArcSelfReportedSub", {
+        received: selfReportedArcReceivedCount,
+        noAnswer: selfReportedArcNoAnswerCount
+      });
+    }
+  } else {
+    if (elArcQueue) elArcQueue.textContent = String(pendingArcProofsCount);
+    if (elArcSub) elArcSub.textContent = t("adminPendingReviewCount", { count: pendingArcProofsCount });
+  }
   if (elMentors) elMentors.textContent = String(totalMentors);
   if (elMentorsSub) elMentorsSub.textContent = t("adminStudentsAverageCount", { avg: avgStudentsPerMentor });
 
   // 2. Update Needs Attention Widget (Strictly 0 when empty + reactive ARC deadline)
   const attentionTotal =
     (missingArcStudents > 0 ? 1 : 0) +
-    (pendingReportsCount > 0 ? 1 : 0) +
+    (FILES_ENABLED && pendingReportsCount > 0 ? 1 : 0) +
     (unassignedStudents.length > 0 ? 1 : 0);
   const elAttBadge = document.getElementById("needs-attention-badge");
   const elAttArc = document.getElementById("attention-arc-count");
@@ -3455,15 +3806,24 @@ function renderAdminAll() {
     });
   }
 
-  // 3. Render ARC Proof Reviews Table & Warning Dispatch Status Badge
-  renderAdminArcTable();
-  updateAdminArcWarningStatusUI();
+  // 3. Render Step 6 Self-Reported ARC Follow-Up Section & Legacy File Review Table (when FILES_ENABLED)
+  renderAdminArcFollowupSection(
+    selfReportedArcReceivedCount,
+    selfReportedArcNotReceivedCount,
+    selfReportedArcNoAnswerCount
+  );
+  if (FILES_ENABLED) {
+    renderAdminArcTable();
+    updateAdminArcWarningStatusUI();
+  }
 
   // 4. Render People Overview & Detailed Roster
   renderAdminPeopleOverview(avgCompletionPct, unassignedStudents);
 
-  // 5. Render Mentor Monthly Reports Box (Grouped by Month + Mentor Filter + 6-Session Cycle)
-  renderAdminMonthlyReports();
+  // 5. Render Mentor Monthly Reports Box (only when FILES_ENABLED)
+  if (FILES_ENABLED) {
+    renderAdminMonthlyReports();
+  }
 
   // 6. Render Campus Announcements Box
   renderAdminAnnouncements();
@@ -3485,6 +3845,71 @@ function renderAdminAll() {
         )
         .join("");
   }
+}
+
+// ---------- STEP 6: SELF-REPORTED ARC FOLLOW-UP ("ARC NOT RECEIVED" LIST & COUNTS) ----------
+function renderAdminArcFollowupSection(receivedCount, notReceivedCount, noAnswerCount) {
+  const elReceived = document.getElementById("admin-arc-count-received");
+  const elNotReceived = document.getElementById("admin-arc-count-not-received");
+  const elNoAnswer = document.getElementById("admin-arc-count-no-answer");
+  const tbody = document.getElementById("admin-arc-not-received-tbody");
+
+  if (elReceived) elReceived.textContent = String(receivedCount ?? 0);
+  if (elNotReceived) elNotReceived.textContent = String(notReceivedCount ?? 0);
+  if (elNoAnswer) elNoAnswer.textContent = String(noAnswerCount ?? 0);
+  if (!tbody) return;
+
+  const notReceivedStudents = adminRosterStudents
+    .filter((stu) => adminChecklistsMap[stu._id]?.arcStatus === "not_received")
+    .map((stu) => {
+      const cl = adminChecklistsMap[stu._id] || {};
+      return {
+        studentId: stu._id,
+        studentName: stu.name || cl.name || stu._id,
+        department: formatDepartmentLabel(stu.department),
+        reportedAt: cl.arcReportedAt || cl.updatedAt || ""
+      };
+    })
+    .sort((a, b) => String(b.reportedAt || "").localeCompare(String(a.reportedAt || "")));
+
+  if (notReceivedStudents.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align: center; padding: 24px; color: #94a3b8;">
+          ${escapeHtml(t("noArcNotReceivedStudents"))}
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = notReceivedStudents
+    .map((item) => {
+      const dateStr = item.reportedAt
+        ? String(item.reportedAt).slice(0, 16).replace("T", " ")
+        : "—";
+      return `
+        <tr data-arc-not-received-id="${escapeHtml(item.studentId)}">
+          <td>
+            <div class="table-student-cell">
+              <div class="table-avatar-sm">${escapeHtml(getInitials(item.studentName))}</div>
+              <div class="table-student-info">
+                <strong>${escapeHtml(item.studentName)}</strong>
+              </div>
+            </div>
+          </td>
+          <td><strong>${escapeHtml(item.studentId)}</strong></td>
+          <td>${escapeHtml(item.department || t("unassignedDeptBadge"))}</td>
+          <td>${escapeHtml(dateStr)}</td>
+          <td>
+            <span class="status-pill-badge rejected">${escapeHtml(
+              t("arcStatusNotReceivedSelfReported")
+            )}</span>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
 }
 
 // ---------- ARC PROOF REVIEWS TABLE ----------
@@ -3681,6 +4106,7 @@ function updateAdminArcWarningStatusUI() {
 });
 
 document.getElementById("btn-broadcast-arc-warning")?.addEventListener("click", async () => {
+  if (!FILES_ENABLED) return;
   const btnEl = document.getElementById("btn-broadcast-arc-warning");
   if (!btnEl || isSendingArcWarning || btnEl.disabled) return;
 
@@ -4036,7 +4462,7 @@ function renderDetailedRosterTable() {
             <th>${escapeHtml(t("thMentorId"))}</th>
             <th>${escapeHtml(t("thPhone"))}</th>
             <th>${escapeHtml(t("thAssignedMentees"))}</th>
-            <th>${escapeHtml(t("thMonthlyProgress", { month: currentFocusMonth }))}</th>
+            ${FILES_ENABLED ? `<th>${escapeHtml(t("thMonthlyProgress", { month: currentFocusMonth }))}</th>` : ""}
             <th>${escapeHtml(t("thAction"))}</th>
           </tr>
         </thead>
@@ -4069,11 +4495,15 @@ function renderDetailedRosterTable() {
                   </td>
                   <td>${escapeHtml(m.phone || "—")}</td>
                   <td><span class="status-pill-badge approved">${escapeHtml(t("studentsCountBadge", { count: menteeCount }))}</span></td>
-                  <td>
-                    <span class="status-pill-badge ${mFiles >= MONTH_MAX_SESSIONS ? "approved" : "pending"}">
-                      ${escapeHtml(t("filesSubmittedCount", { count: mFiles, max: MONTH_MAX_SESSIONS }))}
-                    </span>
-                  </td>
+                  ${
+                    FILES_ENABLED
+                      ? `<td>
+                          <span class="status-pill-badge ${mFiles >= MONTH_MAX_SESSIONS ? "approved" : "pending"}">
+                            ${escapeHtml(t("filesSubmittedCount", { count: mFiles, max: MONTH_MAX_SESSIONS }))}
+                          </span>
+                        </td>`
+                      : ""
+                  }
                   <td>
                     <div class="table-action-btns">
                       <button type="button" class="btn-table-action" data-chat-person="${escapeHtml(m._id)}" data-chat-name="${escapeHtml(m.name || m._id)}">${escapeHtml(t("btnMessageShort"))}</button>
@@ -4107,15 +4537,32 @@ function renderDetailedRosterTable() {
               const cl = adminChecklistsMap[s._id] || { tasks: {}, taskDocs: {} };
               const doneCount = CORE_TASKS.filter((k) => Boolean(cl.tasks?.[k])).length;
               const pct = Math.round((doneCount / CORE_TASKS.length) * 100);
-              const arcStatus = cl.taskDocs?.arc?.status || (cl.tasks?.arc ? "approved" : "none");
-              const arcStatusLabel =
-                arcStatus === "none"
-                  ? t("notSubmittedLabel")
-                  : arcStatus === "approved"
-                  ? t("statusApproved")
-                  : arcStatus === "rejected"
-                  ? t("statusRejected")
-                  : t("statusPending");
+              let arcBadgeClass = "pending";
+              let arcStatusLabel = "";
+              if (!FILES_ENABLED) {
+                if (cl.arcStatus === "received") {
+                  arcBadgeClass = "approved";
+                  arcStatusLabel = t("arcStatusReceivedSelfReported");
+                } else if (cl.arcStatus === "not_received") {
+                  arcBadgeClass = "rejected";
+                  arcStatusLabel = t("arcStatusNotReceivedSelfReported");
+                } else {
+                  arcBadgeClass = "pending";
+                  arcStatusLabel = t("arcStatusNoAnswerYet");
+                }
+              } else {
+                const arcStatus = cl.taskDocs?.arc?.status || (cl.tasks?.arc ? "approved" : "none");
+                arcBadgeClass =
+                  arcStatus === "approved" ? "approved" : arcStatus === "rejected" ? "rejected" : "pending";
+                arcStatusLabel =
+                  arcStatus === "none"
+                    ? t("notSubmittedLabel")
+                    : arcStatus === "approved"
+                    ? t("statusApproved")
+                    : arcStatus === "rejected"
+                    ? t("statusRejected")
+                    : t("statusPending");
+              }
               const isChecked = selectedRosterIds.has(s._id) ? "checked" : "";
               const sDeptLabel = formatDepartmentLabel(s.department);
               const sDeptKey = normalizeDepartmentKey(sDeptLabel);
@@ -4172,9 +4619,7 @@ function renderDetailedRosterTable() {
                     <strong>${pct}%</strong> <span style="font-size: 11.5px; color: #64748b;">(${doneCount}/${CORE_TASKS.length})</span>
                   </td>
                   <td>
-                    <span class="status-pill-badge ${
-                      arcStatus === "approved" ? "approved" : arcStatus === "rejected" ? "rejected" : "pending"
-                    }">
+                    <span class="status-pill-badge ${arcBadgeClass}">
                       ${escapeHtml(arcStatusLabel)}
                     </span>
                   </td>
@@ -4324,11 +4769,13 @@ document.getElementById("btn-delete-selected-students")?.addEventListener("click
 
 // ---------- INTERACTIVE NEEDS ATTENTION ROWS ----------
 document.getElementById("btn-attention-arc")?.addEventListener("click", () => {
-  document.getElementById("admin-arc-card")?.scrollIntoView({ behavior: "smooth" });
+  const targetEl = document.getElementById(FILES_ENABLED ? "admin-arc-card" : "admin-arc-followup-box");
+  targetEl?.scrollIntoView({ behavior: "smooth" });
   showToast(t("toastArcStatusTitle"), t("toastArcStatusMsg"), "info");
 });
 
 document.getElementById("btn-attention-reports")?.addEventListener("click", () => {
+  if (!FILES_ENABLED) return;
   document.getElementById("admin-reports-box")?.scrollIntoView({ behavior: "smooth" });
 });
 
@@ -5162,7 +5609,9 @@ document.getElementById("btn-export-csv")?.addEventListener("click", () => {
     const cl = adminChecklistsMap[s._id] || { tasks: {}, taskDocs: {} };
     const doneCount = CORE_TASKS.filter((k) => Boolean(cl.tasks?.[k])).length;
     const pct = Math.round((doneCount / CORE_TASKS.length) * 100);
-    const arcSt = cl.taskDocs?.arc?.status || (cl.tasks?.arc ? "completed" : "pending");
+    const arcSt = !FILES_ENABLED
+      ? cl.arcStatus || (cl.tasks?.arc ? "received" : "no_answer")
+      : cl.taskDocs?.arc?.status || (cl.tasks?.arc ? "completed" : "pending");
     const exportedMentorId = isStudentUnassigned(s, activeMentorIdSet) ? "" : s.mentorId || "";
     rows.push([
       "student",
@@ -5900,6 +6349,7 @@ function renderAdminMonthlyReports() {
 
 // Targeted Warning Dispatch strictly to Unsubmitted / Incomplete Mentors for the active month
 async function dispatchWarningToUnsubmittedMentors(monthKey) {
+  if (!FILES_ENABLED) return;
   const btnEl = document.getElementById("btn-warn-unsubmitted-mentors");
   if (!monthKey || isSendingMentorReportWarning || (btnEl && btnEl.disabled)) return;
 
@@ -5999,6 +6449,7 @@ async function dispatchWarningToUnsubmittedMentors(monthKey) {
 
 // Export Grouped PDFs (Scoped to Selected Month if viewing a month, or Active Checked Months if at Semester Overview)
 document.getElementById("btn-export-mentor-pdfs")?.addEventListener("click", () => {
+  if (!FILES_ENABLED) return;
   const checkedMonths = getActiveCheckedMonthsForSemester(
     adminSelectedSemester,
     adminSelectedAcademicYear,
@@ -6061,6 +6512,7 @@ document.getElementById("btn-export-mentor-pdfs")?.addEventListener("click", () 
 // SESSION & FILE VIEW (DRILL-DOWN MODAL PER MENTOR & ACTIVE MONTH)
 // ===========================================================================
 async function openMentorMonthSubmissionModal(mentorId, monthKey) {
+  if (!FILES_ENABLED) return;
   const modal = document.getElementById("report-detail-modal");
   const titleEl = document.getElementById("report-detail-title");
   const subEl = document.getElementById("report-detail-subtitle");
@@ -6546,6 +6998,25 @@ function renderAdminSettingsPanel() {
     adminDraftReportingMonths = [...configuredMonths];
   }
   renderAdminReportingMonthsCheckboxes();
+
+  // Populate Step 6 ARC Distribution Date & Office Pick-Up Info Card
+  const distDateInput = document.getElementById("admin-arc-distribution-date-input");
+  const officeNameInput = document.getElementById("admin-office-name-input");
+  const officeAddressInput = document.getElementById("admin-office-address-input");
+  const officeHoursInput = document.getElementById("admin-office-hours-input");
+
+  if (distDateInput && document.activeElement !== distDateInput) {
+    distDateInput.value = portalConfigCache?.arcDistributionDate || "";
+  }
+  if (officeNameInput && document.activeElement !== officeNameInput) {
+    officeNameInput.value = portalConfigCache?.officeName || DEFAULT_OFFICE_NAME;
+  }
+  if (officeAddressInput && document.activeElement !== officeAddressInput) {
+    officeAddressInput.value = portalConfigCache?.officeAddress || DEFAULT_OFFICE_ADDRESS;
+  }
+  if (officeHoursInput && document.activeElement !== officeHoursInput) {
+    officeHoursInput.value = portalConfigCache?.officeHours || "";
+  }
 }
 
 function applyReportingSemesterPresetFromControls() {
@@ -6751,6 +7222,50 @@ document.getElementById("btn-save-arc-deadline")?.addEventListener("click", asyn
   await performSaveArcDeadline();
 });
 
+document.getElementById("btn-clear-arc-distribution-date")?.addEventListener("click", () => {
+  const distDateInput = document.getElementById("admin-arc-distribution-date-input");
+  if (distDateInput) distDateInput.value = "";
+});
+
+document.getElementById("btn-save-arc-distribution-settings")?.addEventListener("click", async () => {
+  const distDateInput = document.getElementById("admin-arc-distribution-date-input");
+  const officeNameInput = document.getElementById("admin-office-name-input");
+  const officeAddressInput = document.getElementById("admin-office-address-input");
+  const officeHoursInput = document.getElementById("admin-office-hours-input");
+
+  const arcDistributionDate = String(distDateInput?.value || "").trim();
+  const officeName = String(officeNameInput?.value || "").trim() || DEFAULT_OFFICE_NAME;
+  const officeAddress = String(officeAddressInput?.value || "").trim() || DEFAULT_OFFICE_ADDRESS;
+  const officeHours = String(officeHoursInput?.value || "").trim();
+
+  const performSaveArcDistSettings = async () => {
+    const saveBtn = document.getElementById("btn-save-arc-distribution-settings");
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      await savePortalConfig(
+        {
+          arcDistributionDate,
+          officeName,
+          officeAddress,
+          officeHours
+        },
+        { onRetry: performSaveArcDistSettings }
+      );
+      renderAdminAll();
+      showToast(
+        t("toastArcDistributionSavedTitle"),
+        t("toastArcDistributionSavedMsg"),
+        "success"
+      );
+    } catch (_) {
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  };
+
+  await performSaveArcDistSettings();
+});
+
 // ---------- CAMPUS ANNOUNCEMENTS & BROADCAST SYSTEM ----------
 document.getElementById("admin-announcement-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -6905,6 +7420,7 @@ async function renderAnnouncementsForStudentAndMentor() {
 // 9. DOCUMENT PROOF PREVIEW & VERIFICATION MODAL
 // ============================================================
 function openDocumentModal({ studentId, studentName, taskId, docInfo, viewerRole }) {
+  if (!FILES_ENABLED) return;
   const modal = document.getElementById("doc-modal");
   const studentEl = document.getElementById("doc-modal-student");
   const taskEl = document.getElementById("doc-modal-task");
@@ -7019,6 +7535,7 @@ function openDocumentModal({ studentId, studentName, taskId, docInfo, viewerRole
 });
 
 async function updateDocumentReviewStatus(studentId, taskId, newStatus, note) {
+  if (!FILES_ENABLED) return;
   const performReviewUpdate = async () => {
     try {
       const cl = (await dbGetDoc("checklists", studentId)) || { tasks: {}, taskDocs: {} };
@@ -7265,16 +7782,18 @@ async function collectActiveUrgentAlertsForCurrentUser() {
             title: t("urgentArcAlertTitle"),
             sender: t("internationalOfficeSender"),
             message: arcWarn.customMessage || dlInfo.personalizedMessage,
-            meta: t("urgentArcAlertMeta", { due: dlInfo.formattedDue }),
+            meta: FILES_ENABLED
+              ? t("urgentArcAlertMeta", { due: dlInfo.formattedDue })
+              : t("arcBannerSubmissionDeadline", { due: dlInfo.formattedDue }),
             pushBody: `${dlInfo.personalizedMessage} (${dlInfo.formattedDue})`,
             sentAt: arcWarn.lastSentAt || cfg?.updatedAt || "",
-            ctaLabel: t("urgentArcAlertCta"),
+            ctaLabel: FILES_ENABLED ? t("urgentArcAlertCta") : "",
             isAcknowledged: ackSet.has(alertId) || configAck
           });
         }
       }
     }
-  } else if (currentRole === "mentor") {
+  } else if (currentRole === "mentor" && FILES_ENABLED) {
     const warningsMap = cfg?.mentorReportWarnings || {};
     const allReports = await dbQuery("monthlyReports", where("mentorId", "==", myIdLower));
     const myReports = allReports.filter(
@@ -7430,6 +7949,7 @@ document.getElementById("btn-urgent-alert-action")?.addEventListener("click", as
       renderUrgentBlockingModalFromQueue();
       await renderUrgentAlertsBellDropdown();
 
+      if (!FILES_ENABLED) return;
       if (targetAlert.kind === "student_arc" && currentRole === "student") {
         pendingUploadTaskId = "arc";
         document.getElementById("task-doc-input")?.click();
@@ -8328,9 +8848,7 @@ async function syncLivePortalConfig(forceReloadView = false, options = {}) {
   }
 
   if (currentRole === "student" && currentUserId) {
-    const checklistDoc = (await dbGetDoc("checklists", currentUserId, options)) || {};
-    renderStudentArcDeadlineAndBanner(checklistDoc.tasks || {}, checklistDoc.taskDocs || {}, cfg);
-    await checkAndDisplayUrgentSystemAlerts(true);
+    await loadStudentDashboard(currentUserId, currentUserName);
   } else if (currentRole === "mentor" && currentUserId) {
     const urgentBanner = document.getElementById("student-arc-urgent-banner");
     if (urgentBanner) urgentBanner.style.display = "none";
